@@ -32,10 +32,14 @@ const formatNumber = (num) => {
 };
 
 const getMediaUrl = (post) => {
-  if (post.links?.length > 0 && post.links[0].link) return post.links[0].link;
+  if (post.links?.length > 0) {
+    const first = post.links[0];
+    if (typeof first === 'string') return first;
+    if (first?.link) return first.link;
+    if (first?.thumbnail_url) return first.thumbnail_url;
+  }
   if (post.thumbnail_url) return post.thumbnail_url;
   if (post.screenshotUrl) return post.screenshotUrl;
-  if (post.links?.length > 0 && post.links[0].thumbnail_url) return post.links[0].thumbnail_url;
   return null;
 };
 
