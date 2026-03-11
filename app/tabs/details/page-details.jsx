@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,11 @@ import {
   SafeAreaView,
   StatusBar,
   useWindowDimensions,
+  RefreshControl,
 } from 'react-native';
-import {
-  ArrowLeft,
-} from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Header from '@/components/Header';
-
 import PostsTab from '@/components/PostsTab';
 import InsightsTab from '@/components/InsightsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
@@ -57,15 +55,36 @@ const PageDetailsScreen = () => {
 
   const pageId = params?.pageId || '1';
   const pageName = params?.pageName || 'Page';
-  const followers = params?.followers || '0';
   const platform = params?.platform || 'facebook';
   const tabs = useMemo(() => getTabsForPlatform(platform), [platform]);
   const [activeTab, setActiveTab] = useState(tabs[0]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const postTabRefreshRef = useRef(null);
+
+  const registerRefresh = useCallback((fn) => {
+    postTabRefreshRef.current = fn;
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (postTabRefreshRef.current) {
+      await postTabRefreshRef.current();
+    }
+    setRefreshing(false);
+  }, []);
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'Posts':
-        return <PostsTab pageId={pageId} pageName={pageName} platform={platform} />;
+        return (
+          <PostsTab
+            onRegisterRefresh={registerRefresh}
+            pageId={pageId}
+            pageName={pageName}
+            platform={platform}
+          />
+        );
       case 'Insights':
         return <InsightsTab pageId={pageId} pageName={pageName} platform={platform} />;
       case 'Competitors':
@@ -111,9 +130,7 @@ const PageDetailsScreen = () => {
                   <ArrowLeft size={24} color="#64748B" strokeWidth={2} />
                 </TouchableOpacity>
                 <View className="flex-1">
-                  <Text className="text-xl font-semibold text-slate-800">
-                    {pageName}
-                  </Text>
+                  <Text className="text-xl font-semibold text-slate-800">{pageName}</Text>
                   <Text className="text-xs font-medium mt-0.5 capitalize" style={{ color: '#6e226e' }}>
                     {platform}
                   </Text>
@@ -144,6 +161,14 @@ const PageDetailsScreen = () => {
                 paddingHorizontal: isTablet ? 24 : 20,
                 paddingBottom: 40,
               }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={['#6e226e']}
+                  tintColor="#6e226e"
+                />
+              }
             >
               {renderTabContent()}
             </ScrollView>

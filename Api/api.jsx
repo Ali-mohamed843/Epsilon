@@ -962,3 +962,71 @@ export const createInstagramPost = async ({ pageId, type, message, file, files }
     return { success: false, message: error.message };
   }
 };
+
+export const updateFacebookPost = async ({ pageId, postId, message, file, existingUrl }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found.');
+
+    // Extract numeric post ID from "pageId_postId" format
+    const numericPostId = postId.includes('_') ? postId.split('_')[1] : postId;
+
+    let fileUrl = existingUrl ?? null;
+    if (file) {
+      const uploaded = await uploadMediaFile(token, file, false);
+      fileUrl = uploaded.url;
+    }
+
+    const body = { message: message ?? null, urls: fileUrl ? [fileUrl] : [] };
+    const endpoint = `${BASE_URL}/fb-post/${numericPostId}/update/${pageId}`;
+
+    console.log('Update URL:', endpoint);
+    console.log('Update body:', JSON.stringify(body));
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    console.log('Update status:', response.status);
+    console.log('Update response:', text);
+
+    const data = JSON.parse(text);
+    if (!response.ok) throw new Error(data.message || 'Failed to update post');
+    return { success: true, data: data.data ?? {} };
+  } catch (error) {
+    console.log('updateFacebookPost ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const deleteFacebookPost = async ({ pageId, postId }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found.');
+
+    // Extract numeric post ID from "pageId_postId" format
+    const numericPostId = postId.includes('_') ? postId.split('_')[1] : postId;
+
+    const endpoint = `${BASE_URL}/fb-post/${numericPostId}/delete/${pageId}`;
+    console.log('Delete URL:', endpoint);
+
+    const response = await fetch(endpoint, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    const text = await response.text();
+    console.log('Delete status:', response.status);
+    console.log('Delete response:', text);
+
+    const data = JSON.parse(text);
+    if (!response.ok) throw new Error(data.message || 'Failed to delete post');
+    return { success: true };
+  } catch (error) {
+    console.log('deleteFacebookPost ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};

@@ -1,15 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Linking,
+  View, Text, TouchableOpacity, Image,
+  ActivityIndicator, Linking, Alert,
 } from 'react-native';
-import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play } from 'lucide-react-native';
-import { getPagePosts } from '@/Api/api';
+import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play, Pencil, Trash2 } from 'lucide-react-native';
+import { getPagePosts, deleteFacebookPost } from '@/Api/api';
 import CreatePostModal from '@/components/posts/CreatePostModal';
+import EditPostModal from '@/components/posts/EditPostModal';
 import CreateIgPostModal from '@/components/instagram/CreateIgPostModal';
 import useSocketEvent from '@/hooks/useSocketEvent';
 import { SOCKET_EVENTS } from '@/contexts/SocketContext';
@@ -42,7 +39,7 @@ const getMediaUrl = (post) => {
   return null;
 };
 
-const PostCard = ({ post, pageName, platform }) => {
+const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
   const [imgError, setImgError] = useState(false);
   const avatarLetter = pageName?.charAt(0)?.toUpperCase() || 'P';
   const fromName = post.from?.name || pageName;
@@ -51,10 +48,21 @@ const PostCard = ({ post, pageName, platform }) => {
   const hasMedia = mediaUrl && !imgError;
   const message = post.message || post.caption || '';
   const truncatedMessage = message.length > 200 ? message.substring(0, 200) + '...' : message;
-  const isInstagram = platform === 'instagram';
+  const isFacebook = platform === 'facebook';
 
   const handleOpenPost = () => {
     if (post.permalink) Linking.openURL(post.permalink).catch(() => {});
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDelete(post) },
+      ]
+    );
   };
 
   return (
@@ -74,11 +82,19 @@ const PostCard = ({ post, pageName, platform }) => {
             )}
           </View>
         </View>
-        {/* {post.permalink && (
-          <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.7}>
-            <Text className="text-xs font-medium" style={{ color: BRAND_COLOR }}>Open</Text>
-          </TouchableOpacity>
-        )} */}
+
+        <View className="flex-row items-center">
+          {isFacebook && !isVideo && (
+            <TouchableOpacity onPress={() => onEdit(post)} activeOpacity={0.7} className="p-2 mr-1">
+              <Pencil size={16} color={BRAND_COLOR} />
+            </TouchableOpacity>
+          )}
+          {isFacebook && (
+            <TouchableOpacity onPress={handleDelete} activeOpacity={0.7} className="p-2 mr-1">
+              <Trash2 size={16} color="#ef4444" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {message.length > 0 && (
@@ -111,33 +127,31 @@ const PostCard = ({ post, pageName, platform }) => {
         </TouchableOpacity>
       )}
 
-      {!isInstagram && (
-        <View className="flex-row pt-3 border-t border-slate-100">
-          <View className="flex-row items-center mr-4">
-            <ThumbsUp size={16} color="#64748B" />
-            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.reactions ?? post.likes ?? 0)}</Text>
-          </View>
-          <View className="flex-row items-center mr-4">
-            <MessageCircle size={16} color="#64748B" />
-            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}</Text>
-          </View>
-          <View className="flex-row items-center mr-4">
-            <Share2 size={16} color="#64748B" />
-            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.shares ?? 0)}</Text>
-          </View>
-          {isVideo && (
-            <View className="flex-row items-center">
-              <Eye size={16} color="#64748B" />
-              <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.views ?? 0)}</Text>
-            </View>
-          )}
+      <View className="flex-row pt-3 border-t border-slate-100">
+        <View className="flex-row items-center mr-4">
+          <ThumbsUp size={16} color="#64748B" />
+          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.reactions ?? post.likes ?? 0)}</Text>
         </View>
-      )}
+        <View className="flex-row items-center mr-4">
+          <MessageCircle size={16} color="#64748B" />
+          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}</Text>
+        </View>
+        <View className="flex-row items-center mr-4">
+          <Share2 size={16} color="#64748B" />
+          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.shares ?? 0)}</Text>
+        </View>
+        {isVideo && (
+          <View className="flex-row items-center">
+            <Eye size={16} color="#64748B" />
+            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.views ?? 0)}</Text>
+          </View>
+        )}
+      </View>
     </View>
   );
 };
 
-const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
+const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }) => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -145,27 +159,12 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingPost, setEditingPost] = useState(null);
 
   const perPage = 20;
   const isInstagram = platform === 'instagram';
 
-  useEffect(() => {
-    fetchPosts(1);
-  }, [pageId, platform]);
-
-  useSocketEvent(SOCKET_EVENTS.POST_ADD, (data) => {
-    fetchPosts(1);
-  }, [pageId]);
-
-  useSocketEvent(SOCKET_EVENTS.POST_UPDATE, (data) => {
-    fetchPosts(1);
-  }, [pageId]);
-
-  useSocketEvent(SOCKET_EVENTS.POST_DELETE, (data) => {
-    setPosts((prev) => prev.filter((p) => p._id !== data._id && p.post_id !== data.post_id));
-  }, [pageId]);
-
-  const fetchPosts = async (page) => {
+  const fetchPosts = useCallback(async (page) => {
     if (page === 1) { setLoading(true); setError(''); }
     else setLoadingMore(true);
 
@@ -173,9 +172,6 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       const result = await getPagePosts({ pageId, platform, page, perPage });
       if (result.success) {
         const newPosts = result.posts || [];
-        if (newPosts.length > 0) {
-      console.log('First post fields:', JSON.stringify(newPosts[0], null, 2));
-    }
         if (page === 1) setPosts(newPosts);
         else setPosts((prev) => [...prev, ...newPosts]);
         setHasMore(newPosts.length >= perPage);
@@ -189,13 +185,32 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
 
     setLoading(false);
     setLoadingMore(false);
-  };
+  }, [pageId, platform]);
 
-  const handleLoadMore = () => {
-    if (!loadingMore && hasMore) fetchPosts(currentPage + 1);
-  };
+  useEffect(() => {
+    fetchPosts(1);
+  }, [fetchPosts]);
 
-  const handlePostCreated = () => fetchPosts(1);
+  useEffect(() => {
+    if (onRegisterRefresh) {
+      onRegisterRefresh(() => fetchPosts(1));
+    }
+  }, [onRegisterRefresh, fetchPosts]);
+
+  useSocketEvent(SOCKET_EVENTS.POST_ADD, () => { fetchPosts(1); }, [pageId]);
+  useSocketEvent(SOCKET_EVENTS.POST_UPDATE, () => { fetchPosts(1); }, [pageId]);
+  useSocketEvent(SOCKET_EVENTS.POST_DELETE, (data) => {
+    setPosts((prev) => prev.filter((p) => p._id !== data._id && p.post_id !== data.post_id));
+  }, [pageId]);
+
+  const handleDelete = async (post) => {
+    const result = await deleteFacebookPost({ pageId, postId: post.post_id });
+    if (result.success) {
+      setPosts((prev) => prev.filter((p) => p.post_id !== post.post_id));
+    } else {
+      Alert.alert('Error', result.message || 'Failed to delete post');
+    }
+  };
 
   if (loading) {
     return (
@@ -225,16 +240,24 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           visible={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           pageId={pageId}
-          onPostCreated={handlePostCreated}
+          onPostCreated={() => fetchPosts(1)}
         />
       ) : (
         <CreatePostModal
           visible={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           pageId={pageId}
-          onPostCreated={handlePostCreated}
+          onPostCreated={() => fetchPosts(1)}
         />
       )}
+
+      <EditPostModal
+        visible={!!editingPost}
+        onClose={() => setEditingPost(null)}
+        pageId={pageId}
+        post={editingPost}
+        onPostUpdated={() => { setEditingPost(null); fetchPosts(1); }}
+      />
 
       <TouchableOpacity
         onPress={() => setShowCreateModal(true)}
@@ -247,12 +270,19 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       </TouchableOpacity>
 
       {posts.map((post) => (
-        <PostCard key={post._id || post.post_id} post={post} pageName={pageName} platform={platform} />
+        <PostCard
+          key={post._id || post.post_id}
+          post={post}
+          pageName={pageName}
+          platform={platform}
+          onEdit={setEditingPost}
+          onDelete={handleDelete}
+        />
       ))}
 
       {hasMore && posts.length > 0 && (
         <TouchableOpacity
-          onPress={handleLoadMore}
+          onPress={() => { if (!loadingMore && hasMore) fetchPosts(currentPage + 1); }}
           activeOpacity={0.7}
           className="w-full py-3 rounded-lg items-center justify-center mb-4"
           style={{ backgroundColor: '#6e226e12' }}
