@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Header from '@/components/Header';
 import { getInstagramPages } from '@/Api/api';
+import { useSocket } from '@/contexts/SocketContext';
 
 const BRAND = '#6e226e';
 
@@ -85,6 +86,7 @@ const InstagramPagesScreen = () => {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
   const isLargeScreen = width >= 1024;
+  const { joinPageRooms, connected } = useSocket();
 
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +104,8 @@ const InstagramPagesScreen = () => {
         const result = await getInstagramPages(userId);
         if (result.success) {
           setPages(result.pages);
+          const pageIds = result.pages.map((p) => p.igid || p._id || p.id);
+          joinPageRooms(pageIds);
         } else {
           setError(result.message || 'Something went wrong.');
         }
@@ -112,6 +116,13 @@ const InstagramPagesScreen = () => {
     };
     fetchPages();
   }, []);
+
+  useEffect(() => {
+    if (connected && pages.length > 0) {
+      const pageIds = pages.map((p) => p.igid || p._id || p.id);
+      joinPageRooms(pageIds);
+    }
+  }, [connected]);
 
   const handlePagePress = (page) => {
     setPressedId(page._id);

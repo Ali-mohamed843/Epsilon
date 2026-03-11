@@ -10,6 +10,7 @@ import {
 import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play } from 'lucide-react-native';
 import { getPagePosts } from '@/Api/api';
 import CreatePostModal from '@/components/posts/CreatePostModal';
+import CreateIgPostModal from '@/components/instagram/CreateIgPostModal';
 import useSocketEvent from '@/hooks/useSocketEvent';
 import { SOCKET_EVENTS } from '@/contexts/SocketContext';
 
@@ -34,13 +35,14 @@ const formatNumber = (num) => {
 };
 
 const getMediaUrl = (post) => {
-  if (post.screenshotUrl) return post.screenshotUrl;
+  if (post.links?.length > 0 && post.links[0].link) return post.links[0].link;
   if (post.thumbnail_url) return post.thumbnail_url;
+  if (post.screenshotUrl) return post.screenshotUrl;
   if (post.links?.length > 0 && post.links[0].thumbnail_url) return post.links[0].thumbnail_url;
   return null;
 };
 
-const PostCard = ({ post, pageName }) => {
+const PostCard = ({ post, pageName, platform }) => {
   const [imgError, setImgError] = useState(false);
   const avatarLetter = pageName?.charAt(0)?.toUpperCase() || 'P';
   const fromName = post.from?.name || pageName;
@@ -49,23 +51,17 @@ const PostCard = ({ post, pageName }) => {
   const hasMedia = mediaUrl && !imgError;
   const message = post.message || post.caption || '';
   const truncatedMessage = message.length > 200 ? message.substring(0, 200) + '...' : message;
+  const isInstagram = platform === 'instagram';
 
   const handleOpenPost = () => {
-    if (post.permalink) {
-      Linking.openURL(post.permalink).catch(() => {});
-    }
+    if (post.permalink) Linking.openURL(post.permalink).catch(() => {});
   };
 
   return (
     <View className="bg-white rounded-xl p-4 mb-4 border border-slate-200">
       <View className="flex-row items-center mb-3">
-        <View
-          className="w-10 h-10 rounded-full items-center justify-center mr-2.5"
-          style={{ backgroundColor: '#6e226e20' }}
-        >
-          <Text style={{ color: BRAND_COLOR }} className="font-semibold text-sm">
-            {avatarLetter}
-          </Text>
+        <View className="w-10 h-10 rounded-full items-center justify-center mr-2.5" style={{ backgroundColor: '#6e226e20' }}>
+          <Text style={{ color: BRAND_COLOR }} className="font-semibold text-sm">{avatarLetter}</Text>
         </View>
         <View className="flex-1">
           <Text className="text-sm font-semibold text-slate-800 mb-0.5">{fromName}</Text>
@@ -73,18 +69,16 @@ const PostCard = ({ post, pageName }) => {
             <Text className="text-[11px] text-slate-500">{formatDate(post.created_time)}</Text>
             {post.post_type && (
               <View className="ml-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#6e226e15' }}>
-                <Text className="text-[10px] font-medium capitalize" style={{ color: BRAND_COLOR }}>
-                  {post.post_type}
-                </Text>
+                <Text className="text-[10px] font-medium capitalize" style={{ color: BRAND_COLOR }}>{post.post_type}</Text>
               </View>
             )}
           </View>
         </View>
-        {post.permalink && (
+        {/* {post.permalink && (
           <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.7}>
             <Text className="text-xs font-medium" style={{ color: BRAND_COLOR }}>Open</Text>
           </TouchableOpacity>
-        )}
+        )} */}
       </View>
 
       {message.length > 0 && (
@@ -92,17 +86,8 @@ const PostCard = ({ post, pageName }) => {
       )}
 
       {hasMedia && (
-        <TouchableOpacity
-          onPress={handleOpenPost}
-          activeOpacity={0.9}
-          className="w-full aspect-video rounded-lg mb-3 overflow-hidden bg-slate-100"
-        >
-          <Image
-            source={{ uri: mediaUrl }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-            onError={() => setImgError(true)}
-          />
+        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} className="w-full aspect-video rounded-lg mb-3 overflow-hidden bg-slate-100">
+          <Image source={{ uri: mediaUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" onError={() => setImgError(true)} />
           {isVideo && (
             <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}>
               <View className="w-14 h-14 rounded-full bg-white/90 items-center justify-center">
@@ -114,11 +99,7 @@ const PostCard = ({ post, pageName }) => {
       )}
 
       {!hasMedia && post.post_type && (
-        <TouchableOpacity
-          onPress={handleOpenPost}
-          activeOpacity={0.9}
-          className="w-full h-32 rounded-lg mb-3 bg-slate-100 items-center justify-center"
-        >
+        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} className="w-full h-32 rounded-lg mb-3 bg-slate-100 items-center justify-center">
           {isVideo ? (
             <>
               <Play size={32} color="#94A3B8" />
@@ -130,34 +111,28 @@ const PostCard = ({ post, pageName }) => {
         </TouchableOpacity>
       )}
 
-      <View className="flex-row pt-3 border-t border-slate-100">
-        <View className="flex-row items-center mr-4">
-          <ThumbsUp size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">
-            {formatNumber(post.reactions ?? post.likes ?? 0)}
-          </Text>
-        </View>
-        <View className="flex-row items-center mr-4">
-          <MessageCircle size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">
-            {formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}
-          </Text>
-        </View>
-        <View className="flex-row items-center mr-4">
-          <Share2 size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">
-            {formatNumber(post.shares ?? 0)}
-          </Text>
-        </View>
-        {isVideo && (
-          <View className="flex-row items-center">
-            <Eye size={16} color="#64748B" />
-            <Text className="text-[13px] text-slate-500 ml-1.5">
-              {formatNumber(post.views ?? 0)}
-            </Text>
+      {!isInstagram && (
+        <View className="flex-row pt-3 border-t border-slate-100">
+          <View className="flex-row items-center mr-4">
+            <ThumbsUp size={16} color="#64748B" />
+            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.reactions ?? post.likes ?? 0)}</Text>
           </View>
-        )}
-      </View>
+          <View className="flex-row items-center mr-4">
+            <MessageCircle size={16} color="#64748B" />
+            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}</Text>
+          </View>
+          <View className="flex-row items-center mr-4">
+            <Share2 size={16} color="#64748B" />
+            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.shares ?? 0)}</Text>
+          </View>
+          {isVideo && (
+            <View className="flex-row items-center">
+              <Eye size={16} color="#64748B" />
+              <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.views ?? 0)}</Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 };
@@ -172,43 +147,37 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const perPage = 20;
+  const isInstagram = platform === 'instagram';
 
   useEffect(() => {
     fetchPosts(1);
   }, [pageId, platform]);
 
   useSocketEvent(SOCKET_EVENTS.POST_ADD, (data) => {
-    console.log('Socket: New post added', data);
     fetchPosts(1);
   }, [pageId]);
 
   useSocketEvent(SOCKET_EVENTS.POST_UPDATE, (data) => {
-    console.log('Socket: Post updated', data);
     fetchPosts(1);
   }, [pageId]);
 
   useSocketEvent(SOCKET_EVENTS.POST_DELETE, (data) => {
-    console.log('Socket: Post deleted', data);
     setPosts((prev) => prev.filter((p) => p._id !== data._id && p.post_id !== data.post_id));
   }, [pageId]);
 
   const fetchPosts = async (page) => {
-    if (page === 1) {
-      setLoading(true);
-      setError('');
-    } else {
-      setLoadingMore(true);
-    }
+    if (page === 1) { setLoading(true); setError(''); }
+    else setLoadingMore(true);
 
     try {
       const result = await getPagePosts({ pageId, platform, page, perPage });
       if (result.success) {
         const newPosts = result.posts || [];
-        if (page === 1) {
-          setPosts(newPosts);
-        } else {
-          setPosts((prev) => [...prev, ...newPosts]);
-        }
+        if (newPosts.length > 0) {
+      console.log('First post fields:', JSON.stringify(newPosts[0], null, 2));
+    }
+        if (page === 1) setPosts(newPosts);
+        else setPosts((prev) => [...prev, ...newPosts]);
         setHasMore(newPosts.length >= perPage);
         setCurrentPage(page);
       } else {
@@ -226,9 +195,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
     if (!loadingMore && hasMore) fetchPosts(currentPage + 1);
   };
 
-  const handlePostCreated = () => {
-    fetchPosts(1);
-  };
+  const handlePostCreated = () => fetchPosts(1);
 
   if (loading) {
     return (
@@ -244,12 +211,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       <View className="flex-1 items-center justify-center py-20 px-6">
         <Text className="text-red-500 text-base font-medium text-center mb-2">Failed to load posts</Text>
         <Text className="text-slate-400 text-sm text-center mb-4">{error}</Text>
-        <TouchableOpacity
-          onPress={() => fetchPosts(1)}
-          activeOpacity={0.7}
-          className="px-6 py-2.5 rounded-lg"
-          style={{ backgroundColor: BRAND_COLOR }}
-        >
+        <TouchableOpacity onPress={() => fetchPosts(1)} activeOpacity={0.7} className="px-6 py-2.5 rounded-lg" style={{ backgroundColor: BRAND_COLOR }}>
           <Text className="text-white text-sm font-semibold">Retry</Text>
         </TouchableOpacity>
       </View>
@@ -258,12 +220,21 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
 
   return (
     <View className="flex-1">
-      <CreatePostModal
-        visible={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        pageId={pageId}
-        onPostCreated={handlePostCreated}
-      />
+      {isInstagram ? (
+        <CreateIgPostModal
+          visible={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          pageId={pageId}
+          onPostCreated={handlePostCreated}
+        />
+      ) : (
+        <CreatePostModal
+          visible={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          pageId={pageId}
+          onPostCreated={handlePostCreated}
+        />
+      )}
 
       <TouchableOpacity
         onPress={() => setShowCreateModal(true)}
@@ -276,7 +247,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       </TouchableOpacity>
 
       {posts.map((post) => (
-        <PostCard key={post._id || post.post_id} post={post} pageName={pageName} />
+        <PostCard key={post._id || post.post_id} post={post} pageName={pageName} platform={platform} />
       ))}
 
       {hasMore && posts.length > 0 && (
@@ -287,11 +258,10 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           style={{ backgroundColor: '#6e226e12' }}
           disabled={loadingMore}
         >
-          {loadingMore ? (
-            <ActivityIndicator size="small" color={BRAND_COLOR} />
-          ) : (
-            <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>Load More Posts</Text>
-          )}
+          {loadingMore
+            ? <ActivityIndicator size="small" color={BRAND_COLOR} />
+            : <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>Load More Posts</Text>
+          }
         </TouchableOpacity>
       )}
 

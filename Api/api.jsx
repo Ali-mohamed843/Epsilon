@@ -808,7 +808,6 @@ export const createFacebookPost = async ({ pageId, type, message, file }) => {
     console.log('Type:', type);
     console.log('File URI:', file?.uri);
 
-    // STATUS POST
     if (type === 'status') {
       const response = await fetch(postUrl, {
         method: 'POST',
@@ -823,8 +822,6 @@ export const createFacebookPost = async ({ pageId, type, message, file }) => {
       return { success: true, data: data.data ?? {} };
     }
 
-    // IMAGE / VIDEO POST
-    // Step 1: Upload file to media server
     console.log('Uploading file to media server...');
     const uploadFormData = new FormData();
     uploadFormData.append('file[]', {
@@ -856,7 +853,6 @@ export const createFacebookPost = async ({ pageId, type, message, file }) => {
     if (!fileUrl) throw new Error('No file URL returned from media server');
     console.log('File URL:', fileUrl);
 
-    // Step 2: Create post with the returned URL
     console.log('Creating post with file URL...');
     const postFormData = new FormData();
     postFormData.append('message', message ?? '');
@@ -881,6 +877,88 @@ export const createFacebookPost = async ({ pageId, type, message, file }) => {
 
   } catch (error) {
     console.log('createFacebookPost ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const uploadMediaFile = async (token, file, isInstagram = false) => {
+  const uploadFormData = new FormData();
+  uploadFormData.append('file[]', {
+    uri: file.uri,
+    type: file.mimeType,
+    name: file.fileName ?? `upload_${Date.now()}.${file.mimeType?.split('/')[1] ?? 'jpg'}`,
+  });
+  uploadFormData.append('prefix', isInstagram ? 'instagram' : 'posts');
+
+  const response = await fetch(
+    `https://media.epsilonfinder.com/media/upload-files?needsType=${isInstagram}`,
+    { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: uploadFormData }
+  );
+
+  const text = await response.text();
+  if (!response.ok) throw new Error('Failed to upload file');
+  const data = JSON.parse(text);
+
+  if (isInstagram) {
+    const item = data.data?.[0];
+    return { url: item?.link, mimeType: item?.type };
+  }
+  return { url: data.data?.[0] };
+};
+
+export const createInstagramPost = async ({ pageId, type, message, file, files }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found.');
+
+    const postUrl = `${BASE_URL}/ig-post/create/${pageId}`;
+    console.log('=== createInstagramPost ===', { pageId, type, postUrl });
+
+    const isVideo = file?.mimeType?.startsWith('video');
+
+    let photoUrls = [];
+    let videoUrls = [];
+
+    if (type === 'carousel') {
+      for (const f of files) {
+        const uploaded = await uploadMediaFile(token, f, true);
+        if (f.mimeType?.startsWith('video')) videoUrls.push(uploaded.url);
+        else photoUrls.push(uploaded.url);
+      }
+    } else if (file) {
+      const uploaded = await uploadMediaFile(token, file, true);
+      console.log('Uploaded:', uploaded);
+      if (isVideo) videoUrls.push(uploaded.url);
+      else photoUrls.push(uploaded.url);
+    }
+
+    const body = {
+      type,
+      message: message ?? '',
+      photoUrls,
+      videoUrls,
+    };
+
+    console.log('Sending body:', JSON.stringify(body));
+
+    const response = await fetch(postUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    console.log('IG Post status:', response.status);
+    console.log('IG Post response:', text);
+
+    const data = JSON.parse(text);
+    if (!response.ok) throw new Error(data.message || 'Failed to create post');
+    return { success: true, data: data.data ?? {} };
+  } catch (error) {
+    console.log('createInstagramPost ERROR:', error.message);
     return { success: false, message: error.message };
   }
 };
