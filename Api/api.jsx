@@ -968,7 +968,6 @@ export const updateFacebookPost = async ({ pageId, postId, message, file, existi
     const token = await AsyncStorage.getItem('auth_token');
     if (!token) throw new Error('No auth token found.');
 
-    // Extract numeric post ID from "pageId_postId" format
     const numericPostId = postId.includes('_') ? postId.split('_')[1] : postId;
 
     let fileUrl = existingUrl ?? null;
@@ -1007,7 +1006,6 @@ export const deleteFacebookPost = async ({ pageId, postId }) => {
     const token = await AsyncStorage.getItem('auth_token');
     if (!token) throw new Error('No auth token found.');
 
-    // Extract numeric post ID from "pageId_postId" format
     const numericPostId = postId.includes('_') ? postId.split('_')[1] : postId;
 
     const endpoint = `${BASE_URL}/fb-post/${numericPostId}/delete/${pageId}`;
@@ -1030,3 +1028,4 @@ export const deleteFacebookPost = async ({ pageId, postId }) => {
     return { success: false, message: error.message };
   }
 };
+

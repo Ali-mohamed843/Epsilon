@@ -127,26 +127,38 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
         </TouchableOpacity>
       )}
 
-      <View className="flex-row pt-3 border-t border-slate-100">
-        <View className="flex-row items-center mr-4">
-          <ThumbsUp size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.reactions ?? post.likes ?? 0)}</Text>
-        </View>
-        <View className="flex-row items-center mr-4">
-          <MessageCircle size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}</Text>
-        </View>
-        <View className="flex-row items-center mr-4">
-          <Share2 size={16} color="#64748B" />
-          <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.shares ?? 0)}</Text>
-        </View>
-        {isVideo && (
+      {platform !== 'instagram' && (
+        <View className="px-4 py-3">
           <View className="flex-row items-center">
-            <Eye size={16} color="#64748B" />
-            <Text className="text-[13px] text-slate-500 ml-1.5">{formatNumber(post.views ?? 0)}</Text>
+            <View className="flex-row items-center mr-5">
+              <ThumbsUp size={18} color="#334155" />
+              <Text className="text-[13px] font-semibold text-slate-700 ml-1.5">
+                {formatNumber(post.reactions ?? post.likes ?? 0)}
+              </Text>
+            </View>
+            <View className="flex-row items-center mr-5">
+              <MessageCircle size={18} color="#334155" />
+              <Text className="text-[13px] font-semibold text-slate-700 ml-1.5">
+                {formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}
+              </Text>
+            </View>
+            <View className="flex-row items-center mr-5">
+              <Share2 size={18} color="#334155" />
+              <Text className="text-[13px] font-semibold text-slate-700 ml-1.5">
+                {formatNumber(post.shares ?? 0)}
+              </Text>
+            </View>
+            {isVideo && (
+              <View className="flex-row items-center">
+                <Eye size={18} color="#334155" />
+                <Text className="text-[13px] font-semibold text-slate-700 ml-1.5">
+                  {formatNumber(post.views ?? 0)}
+                </Text>
+              </View>
+            )}
           </View>
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 };
