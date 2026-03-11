@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from 'react-native';
 const BASE_URL = 'https://backend.epsilonfinder.com/api';
 const INSIGHTS_BASE_URL = 'https://insights.epsilonfinder.com/api';
 
@@ -792,6 +793,94 @@ export const assignPagesToUser = async ({ pages, userId, platform = 'facebook' }
     return { success: true, data: data.data ?? {} };
   } catch (error) {
     console.log('assignPagesToUser ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const createFacebookPost = async ({ pageId, type, message, file }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    console.log('=== createFacebookPost ===');
+    const postUrl = `${BASE_URL}/fb-post/create/${pageId}?type=${type}`;
+    console.log('URL:', postUrl);
+    console.log('Type:', type);
+    console.log('File URI:', file?.uri);
+
+    // STATUS POST
+    if (type === 'status') {
+      const response = await fetch(postUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to create post');
+      return { success: true, data: data.data ?? {} };
+    }
+
+    // IMAGE / VIDEO POST
+    // Step 1: Upload file to media server
+    console.log('Uploading file to media server...');
+    const uploadFormData = new FormData();
+    uploadFormData.append('file[]', {
+      uri: file.uri,
+      type: file.mimeType,
+      name: file.fileName ?? `upload.${type === 'video' ? 'mp4' : 'jpg'}`,
+    });
+    uploadFormData.append('prefix', 'posts');
+
+    const uploadResponse = await fetch(
+      'https://media.epsilonfinder.com/media/upload-files?needsType=false',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: uploadFormData,
+      }
+    );
+
+    const uploadText = await uploadResponse.text();
+    console.log('Upload status:', uploadResponse.status);
+    console.log('Upload response:', uploadText);
+
+    if (!uploadResponse.ok) throw new Error('Failed to upload file to media server');
+
+    const uploadData = JSON.parse(uploadText);
+    const fileUrl = uploadData.data?.[0];
+    if (!fileUrl) throw new Error('No file URL returned from media server');
+    console.log('File URL:', fileUrl);
+
+    // Step 2: Create post with the returned URL
+    console.log('Creating post with file URL...');
+    const postFormData = new FormData();
+    postFormData.append('message', message ?? '');
+    postFormData.append('urls[]', fileUrl);
+    postFormData.append('thumb', 'null');
+
+    const response = await fetch(postUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: postFormData,
+    });
+
+    const responseText = await response.text();
+    console.log('Post status:', response.status);
+    console.log('Post response:', responseText);
+
+    const data = JSON.parse(responseText);
+    if (!response.ok) throw new Error(data.message || 'Failed to create post');
+    return { success: true, data: data.data ?? {} };
+
+  } catch (error) {
+    console.log('createFacebookPost ERROR:', error.message);
     return { success: false, message: error.message };
   }
 };

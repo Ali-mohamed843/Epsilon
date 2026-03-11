@@ -1,8 +1,10 @@
 import { Stack } from "expo-router";
 import "../global.css";
+import { SocketProvider } from '@/contexts/SocketContext';
 
 export default function RootLayout() {
-  return <Stack>
+  return <SocketProvider>
+    <Stack>
     <Stack.Screen
           name="index"
           options={{ headerShown: false }}
@@ -27,5 +29,6 @@ export default function RootLayout() {
           name="pages"
           options={{ headerShown: false }}
         />
-  </Stack>;
+  </Stack>
+  </SocketProvider>;
 }

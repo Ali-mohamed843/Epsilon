@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play } from 'lucide-react-native';
 import { getPagePosts } from '@/Api/api';
+import CreatePostModal from '@/components/posts/CreatePostModal';
+import useSocketEvent from '@/hooks/useSocketEvent';
+import { SOCKET_EVENTS } from '@/contexts/SocketContext';
 
 const BRAND_COLOR = '#6e226e';
 
@@ -37,24 +40,19 @@ const getMediaUrl = (post) => {
   return null;
 };
 
-
 const PostCard = ({ post, pageName }) => {
   const [imgError, setImgError] = useState(false);
   const avatarLetter = pageName?.charAt(0)?.toUpperCase() || 'P';
   const fromName = post.from?.name || pageName;
-
   const mediaUrl = getMediaUrl(post);
   const isVideo = post.post_type === 'video';
   const hasMedia = mediaUrl && !imgError;
-
   const message = post.message || post.caption || '';
   const truncatedMessage = message.length > 200 ? message.substring(0, 200) + '...' : message;
 
   const handleOpenPost = () => {
     if (post.permalink) {
-      Linking.openURL(post.permalink).catch((err) =>
-        console.log('Failed to open URL:', err)
-      );
+      Linking.openURL(post.permalink).catch(() => {});
     }
   };
 
@@ -69,44 +67,28 @@ const PostCard = ({ post, pageName }) => {
             {avatarLetter}
           </Text>
         </View>
-
         <View className="flex-1">
-          <Text className="text-sm font-semibold text-slate-800 mb-0.5">
-            {fromName}
-          </Text>
+          <Text className="text-sm font-semibold text-slate-800 mb-0.5">{fromName}</Text>
           <View className="flex-row items-center">
-            <Text className="text-[11px] text-slate-500">
-              {formatDate(post.created_time)}
-            </Text>
+            <Text className="text-[11px] text-slate-500">{formatDate(post.created_time)}</Text>
             {post.post_type && (
-              <View
-                className="ml-2 px-2 py-0.5 rounded-full"
-                style={{ backgroundColor: '#6e226e15' }}
-              >
-                <Text
-                  className="text-[10px] font-medium capitalize"
-                  style={{ color: BRAND_COLOR }}
-                >
+              <View className="ml-2 px-2 py-0.5 rounded-full" style={{ backgroundColor: '#6e226e15' }}>
+                <Text className="text-[10px] font-medium capitalize" style={{ color: BRAND_COLOR }}>
                   {post.post_type}
                 </Text>
               </View>
             )}
           </View>
         </View>
-
         {post.permalink && (
           <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.7}>
-            <Text className="text-xs font-medium" style={{ color: BRAND_COLOR }}>
-              Open
-            </Text>
+            <Text className="text-xs font-medium" style={{ color: BRAND_COLOR }}>Open</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {message.length > 0 && (
-        <Text className="text-[13px] text-slate-600 leading-5 mb-3">
-          {truncatedMessage}
-        </Text>
+        <Text className="text-[13px] text-slate-600 leading-5 mb-3">{truncatedMessage}</Text>
       )}
 
       {hasMedia && (
@@ -122,10 +104,7 @@ const PostCard = ({ post, pageName }) => {
             onError={() => setImgError(true)}
           />
           {isVideo && (
-            <View
-              className="absolute inset-0 items-center justify-center"
-              style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}
-            >
+            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}>
               <View className="w-14 h-14 rounded-full bg-white/90 items-center justify-center">
                 <Play size={24} color={BRAND_COLOR} fill={BRAND_COLOR} />
               </View>
@@ -146,9 +125,7 @@ const PostCard = ({ post, pageName }) => {
               <Text className="text-slate-400 text-xs mt-2">Video post</Text>
             </>
           ) : (
-            <Text className="text-slate-400 text-xs">
-              {post.post_type} post
-            </Text>
+            <Text className="text-slate-400 text-xs">{post.post_type} post</Text>
           )}
         </TouchableOpacity>
       )}
@@ -160,21 +137,18 @@ const PostCard = ({ post, pageName }) => {
             {formatNumber(post.reactions ?? post.likes ?? 0)}
           </Text>
         </View>
-
         <View className="flex-row items-center mr-4">
           <MessageCircle size={16} color="#64748B" />
           <Text className="text-[13px] text-slate-500 ml-1.5">
             {formatNumber(post.comments_counts ?? post.number_of_comments ?? post.comments_count ?? 0)}
           </Text>
         </View>
-
         <View className="flex-row items-center mr-4">
           <Share2 size={16} color="#64748B" />
           <Text className="text-[13px] text-slate-500 ml-1.5">
             {formatNumber(post.shares ?? 0)}
           </Text>
         </View>
-
         {isVideo && (
           <View className="flex-row items-center">
             <Eye size={16} color="#64748B" />
@@ -195,12 +169,28 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const perPage = 20;
 
   useEffect(() => {
     fetchPosts(1);
   }, [pageId, platform]);
+
+  useSocketEvent(SOCKET_EVENTS.POST_ADD, (data) => {
+    console.log('Socket: New post added', data);
+    fetchPosts(1);
+  }, [pageId]);
+
+  useSocketEvent(SOCKET_EVENTS.POST_UPDATE, (data) => {
+    console.log('Socket: Post updated', data);
+    fetchPosts(1);
+  }, [pageId]);
+
+  useSocketEvent(SOCKET_EVENTS.POST_DELETE, (data) => {
+    console.log('Socket: Post deleted', data);
+    setPosts((prev) => prev.filter((p) => p._id !== data._id && p.post_id !== data.post_id));
+  }, [pageId]);
 
   const fetchPosts = async (page) => {
     if (page === 1) {
@@ -212,8 +202,6 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
 
     try {
       const result = await getPagePosts({ pageId, platform, page, perPage });
-      console.log('getPagePosts result:', result.success, 'count:', result.posts?.length);
-
       if (result.success) {
         const newPosts = result.posts || [];
         if (page === 1) {
@@ -224,14 +212,10 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         setHasMore(newPosts.length >= perPage);
         setCurrentPage(page);
       } else {
-        if (page === 1) {
-          setError(result.message || 'Failed to load posts');
-        }
+        if (page === 1) setError(result.message || 'Failed to load posts');
       }
     } catch (err) {
-      if (page === 1) {
-        setError(err.message || 'Something went wrong');
-      }
+      if (page === 1) setError(err.message || 'Something went wrong');
     }
 
     setLoading(false);
@@ -239,13 +223,11 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchPosts(currentPage + 1);
-    }
+    if (!loadingMore && hasMore) fetchPosts(currentPage + 1);
   };
 
-  const handleAddPost = () => {
-    console.log('Add new post for page:', pageId);
+  const handlePostCreated = () => {
+    fetchPosts(1);
   };
 
   if (loading) {
@@ -260,9 +242,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   if (error && posts.length === 0) {
     return (
       <View className="flex-1 items-center justify-center py-20 px-6">
-        <Text className="text-red-500 text-base font-medium text-center mb-2">
-          Failed to load posts
-        </Text>
+        <Text className="text-red-500 text-base font-medium text-center mb-2">Failed to load posts</Text>
         <Text className="text-slate-400 text-sm text-center mb-4">{error}</Text>
         <TouchableOpacity
           onPress={() => fetchPosts(1)}
@@ -278,24 +258,25 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
 
   return (
     <View className="flex-1">
+      <CreatePostModal
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        pageId={pageId}
+        onPostCreated={handlePostCreated}
+      />
+
       <TouchableOpacity
-        onPress={handleAddPost}
+        onPress={() => setShowCreateModal(true)}
         activeOpacity={0.8}
         className="w-full py-3 rounded-lg flex-row items-center justify-center mb-4"
         style={{ backgroundColor: BRAND_COLOR }}
       >
         <Plus size={20} color="#ffffff" strokeWidth={2} />
-        <Text className="text-white text-sm font-semibold ml-2">
-          Add New Post
-        </Text>
+        <Text className="text-white text-sm font-semibold ml-2">Add New Post</Text>
       </TouchableOpacity>
 
       {posts.map((post) => (
-        <PostCard
-          key={post._id || post.post_id}
-          post={post}
-          pageName={pageName}
-        />
+        <PostCard key={post._id || post.post_id} post={post} pageName={pageName} />
       ))}
 
       {hasMore && posts.length > 0 && (
@@ -309,9 +290,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           {loadingMore ? (
             <ActivityIndicator size="small" color={BRAND_COLOR} />
           ) : (
-            <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>
-              Load More Posts
-            </Text>
+            <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>Load More Posts</Text>
           )}
         </TouchableOpacity>
       )}
@@ -319,9 +298,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       {posts.length === 0 && (
         <View className="flex-1 items-center justify-center py-20">
           <Text className="text-slate-400 text-base">No posts yet</Text>
-          <Text className="text-slate-400 text-sm mt-1">
-            Create your first post!
-          </Text>
+          <Text className="text-slate-400 text-sm mt-1">Create your first post!</Text>
         </View>
       )}
     </View>
