@@ -1029,3 +1029,40 @@ export const deleteFacebookPost = async ({ pageId, postId }) => {
   }
 };
 
+const getPlatformCommentPrefix = (platform) => {
+  switch (platform) {
+    case 'facebook': return 'fb-comments';
+    case 'instagram': return 'insta-comments';
+    case 'tiktok': return 'tiktok-comments';
+    case 'snapchat': return 'snapchat-comments';
+    default: return 'fb-comments';
+  }
+};
+
+export const deleteComment = async ({ pageId, commentId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/delete`;
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to delete comment');
+    }
+
+    return { success: true, comment: data.comment };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
