@@ -5,65 +5,33 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Image,
   Alert,
+  Image,
 } from 'react-native';
-import { Search, Pin, ThumbsUp, MessageCircle, Trash2 } from 'lucide-react-native';
-import { getPageComments, deleteComment } from '@/Api/api';
+import { Search, Pin, ThumbsUp, EyeOff, Eye, Trash2 } from 'lucide-react-native';
+import { getPageComments, deleteComment, hideComment, likeComment } from '@/Api/api';
+import FilterButton from '@/components/comments/FilterButton';
+import CommentBadge from '@/components/comments/CommentBadge';
+import IconButton from '@/components/comments/IconButton';
 
 const BRAND = '#6e226e';
+const PER_PAGE = 30;
 
-const FilterButton = ({ title, isActive, onPress }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    activeOpacity={0.7}
-    className={`px-4 py-2 rounded-lg mr-2 border ${isActive ? 'border-0' : 'bg-white border-slate-200'}`}
-    style={isActive ? { backgroundColor: BRAND, borderColor: BRAND } : {}}
-  >
-    <Text className={`text-sm font-medium ${isActive ? 'text-white' : 'text-slate-500'}`}>
-      {title}
-    </Text>
-  </TouchableOpacity>
-);
-
-const CommentBadge = ({ type }) => {
-  const isReply = type === 'reply';
-  return (
-    <View className={`px-2.5 py-1 rounded-md ${isReply ? 'bg-purple-100' : 'bg-pink-100'}`}>
-      <Text
-        className={`text-xs font-medium capitalize ${isReply ? 'text-purple-700' : 'text-pink-700'}`}
-        style={!isReply ? { color: BRAND } : {}}
-      >
-        {type ?? 'direct'}
-      </Text>
-    </View>
-  );
-};
-
-const IconButton = ({ icon: Icon, color = '#64748B', bgColor = 'bg-slate-100', onPress, disabled = false }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    activeOpacity={0.7}
-    disabled={disabled}
-    className={`w-9 h-9 rounded-lg ${bgColor} items-center justify-center`}
-    style={disabled ? { opacity: 0.5 } : {}}
-  >
-    <Icon size={18} color={color} />
-  </TouchableOpacity>
-);
-
-const CommentCard = ({ comment, onViewHistory, onPin, onLike, onMessage, onDelete, isDeleting }) => {
+const CommentCard = ({ comment, onViewHistory, onPin, onLike, onHide, onDelete, isDeleting, isHiding, isLiking }) => {
   const badgeType = comment.parent_id === comment.post_id ? 'direct' : 'reply';
   const avatarUrl = comment.from?.picture;
   const name = comment.from?.name ?? 'Unknown';
   const time = comment.created_time ? new Date(comment.created_time).toLocaleString() : '';
+  const isHidden = comment.is_hided === true;
+  const isLiked = comment.is_liked === true;
+  const isBusy = isDeleting || isHiding || isLiking;
 
   return (
     <View
       className="bg-white rounded-xl p-4 mb-3 border border-slate-200"
-      style={isDeleting ? { opacity: 0.5 } : {}}
+      style={isHidden ? { borderColor: '#F59E0B', backgroundColor: '#FFFBEB' } : {}}
     >
-      {isDeleting && (
+      {isBusy && (
         <View
           style={{
             position: 'absolute',
@@ -78,8 +46,19 @@ const CommentCard = ({ comment, onViewHistory, onPin, onLike, onMessage, onDelet
             justifyContent: 'center',
           }}
         >
-          <ActivityIndicator size="small" color="#DC2626" />
-          <Text style={{ color: '#DC2626', fontSize: 12, marginTop: 4 }}>Deleting...</Text>
+          <ActivityIndicator
+            size="small"
+            color={isDeleting ? '#DC2626' : isLiking ? BRAND : '#F59E0B'}
+          />
+          <Text
+            style={{
+              color: isDeleting ? '#DC2626' : isLiking ? BRAND : '#F59E0B',
+              fontSize: 12,
+              marginTop: 4,
+            }}
+          >
+            {isDeleting ? 'Deleting...' : 'Updating...'}
+          </Text>
         </View>
       )}
 
@@ -92,7 +71,19 @@ const CommentCard = ({ comment, onViewHistory, onPin, onLike, onMessage, onDelet
           )}
         </View>
         <View className="flex-1">
-          <Text className="text-sm font-semibold text-slate-800 mb-0.5">{name}</Text>
+          <View className="flex-row items-center">
+            <Text className="text-sm font-semibold text-slate-800 mb-0.5">{name}</Text>
+            {isHidden && (
+              <View className="ml-2 px-2 py-0.5 rounded bg-amber-100">
+                <Text className="text-xs text-amber-700 font-medium">Hidden</Text>
+              </View>
+            )}
+            {isLiked && (
+              <View className="ml-2 px-2 py-0.5 rounded bg-purple-100">
+                <Text className="text-xs font-medium" style={{ color: BRAND }}>Liked</Text>
+              </View>
+            )}
+          </View>
           <Text className="text-xs text-slate-500">{time}</Text>
         </View>
         <CommentBadge type={badgeType} />
@@ -111,7 +102,7 @@ const CommentCard = ({ comment, onViewHistory, onPin, onLike, onMessage, onDelet
         <TouchableOpacity
           onPress={onViewHistory}
           activeOpacity={0.7}
-          disabled={isDeleting}
+          disabled={isBusy}
           className="px-4 py-2 rounded-lg"
           style={{ backgroundColor: BRAND }}
         >
@@ -119,10 +110,23 @@ const CommentCard = ({ comment, onViewHistory, onPin, onLike, onMessage, onDelet
         </TouchableOpacity>
 
         <View className="flex-row gap-2">
-          <IconButton icon={Pin} color="#64748B" bgColor="bg-slate-100" onPress={onPin} disabled={isDeleting} />
-          <IconButton icon={ThumbsUp} color={BRAND} bgColor="bg-purple-100" onPress={onLike} disabled={isDeleting} />
-          <IconButton icon={MessageCircle} color="#64748B" bgColor="bg-slate-100" onPress={onMessage} disabled={isDeleting} />
-          <IconButton icon={Trash2} color="#DC2626" bgColor="bg-red-100" onPress={onDelete} disabled={isDeleting} />
+          <IconButton icon={Pin} color="#64748B" bgColor="bg-slate-100" onPress={onPin} disabled={isBusy} />
+          <IconButton
+            icon={ThumbsUp}
+            color={isLiked ? '#ffffff' : BRAND}
+            bgColor={isLiked ? '' : 'bg-purple-100'}
+            style={isLiked ? { backgroundColor: BRAND } : {}}
+            onPress={onLike}
+            disabled={isBusy}
+          />
+          <IconButton
+            icon={isHidden ? Eye : EyeOff}
+            color={isHidden ? '#F59E0B' : '#64748B'}
+            bgColor={isHidden ? 'bg-amber-100' : 'bg-slate-100'}
+            onPress={onHide}
+            disabled={isBusy}
+          />
+          <IconButton icon={Trash2} color="#DC2626" bgColor="bg-red-100" onPress={onDelete} disabled={isBusy} />
         </View>
       </View>
     </View>
@@ -134,49 +138,34 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-
   const [comments, setComments] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
   const [deletingIds, setDeletingIds] = useState(new Set());
-
+  const [hidingIds, setHidingIds] = useState(new Set());
+  const [likingIds, setLikingIds] = useState(new Set());
   const isFetching = useRef(false);
-  const PER_PAGE = 30;
 
-  const fetchComments = useCallback(
-    async ({ pageNum = 1, reset = false } = {}) => {
-      if (isFetching.current) return;
-      isFetching.current = true;
-      setLoading(true);
-      setError(null);
+  const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
+    if (isFetching.current) return;
+    isFetching.current = true;
+    setLoading(true);
+    setError(null);
 
-      const result = await getPageComments({
-        pageId,
-        platform,
-        page: pageNum,
-        perPage: PER_PAGE,
-        search: searchQuery,
-        sort,
-      });
+    const result = await getPageComments({ pageId, platform, page: pageNum, perPage: PER_PAGE, search: searchQuery, sort });
 
-      isFetching.current = false;
-      setLoading(false);
+    isFetching.current = false;
+    setLoading(false);
 
-      if (!result.success) {
-        setError(result.message);
-        return;
-      }
+    if (!result.success) { setError(result.message); return; }
 
-      const incoming = result.comments;
-      setComments((prev) => (reset ? incoming : [...prev, ...incoming]));
-      setHasMore(incoming.length === PER_PAGE);
-      setPage(pageNum);
-    },
-    [pageId, platform, searchQuery, sort]
-  );
+    const incoming = result.comments;
+    setComments(prev => reset ? incoming : [...prev, ...incoming]);
+    setHasMore(incoming.length === PER_PAGE);
+    setPage(pageNum);
+  }, [pageId, platform, searchQuery, sort]);
 
   useEffect(() => {
     setComments([]);
@@ -191,65 +180,77 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   }, [searchInput]);
 
   const loadMore = () => {
-    if (!loading && hasMore && !isFetching.current) {
-      fetchComments({ pageNum: page + 1 });
-    }
+    if (!loading && hasMore && !isFetching.current) fetchComments({ pageNum: page + 1 });
   };
 
-  const handleDelete = useCallback(
-    (comment) => {
-      const commentId = comment.comment_id;
-      const commentName = comment.from?.name ?? 'this comment';
-      const commentPreview =
-        comment.message?.length > 50
-          ? comment.message.substring(0, 50) + '...'
-          : comment.message ?? '';
+  const addBusyId = (setter, id) => setter(prev => new Set([...prev, id]));
+  const removeBusyId = (setter, id) => setter(prev => { const n = new Set(prev); n.delete(id); return n; });
 
-      Alert.alert(
-        'Delete Comment',
-        `Are you sure you want to delete ${commentName}'s comment?\n\n"${commentPreview}"`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              setDeletingIds((prev) => new Set([...prev, comment._id]));
+  const handleDelete = useCallback((comment) => {
+    const preview = comment.message?.length > 50 ? comment.message.substring(0, 50) + '...' : comment.message ?? '';
+    Alert.alert('Delete Comment', `Delete "${preview}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          addBusyId(setDeletingIds, comment._id);
+          const result = await deleteComment({ pageId, commentId: comment.comment_id, platform });
+          if (result.success) {
+            setComments(prev => prev.filter(c => c._id !== comment._id));
+          } else {
+            Alert.alert('Delete Failed', result.message);
+          }
+          removeBusyId(setDeletingIds, comment._id);
+        }
+      }
+    ]);
+  }, [pageId, platform]);
 
-              const result = await deleteComment({
-                pageId,
-                commentId,
-                platform,
-              });
+  const handleHide = useCallback((comment) => {
+    const isHidden = comment.is_hided === true;
+    const action = isHidden ? 'Unhide' : 'Hide';
+    Alert.alert(`${action} Comment`, `${action} this comment?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: action, onPress: async () => {
+          addBusyId(setHidingIds, comment._id);
+          const result = await hideComment({ pageId, commentId: comment.comment_id, platform });
+          if (result.success) {
+            setComments(prev => prev.map(c =>
+              c._id === comment._id ? { ...c, is_hided: result.comment.is_hided } : c
+            ));
+          } else {
+            Alert.alert(`${action} Failed`, result.message);
+          }
+          removeBusyId(setHidingIds, comment._id);
+        }
+      }
+    ]);
+  }, [pageId, platform]);
 
-              if (result.success) {
-                setComments((prev) => prev.filter((c) => c._id !== comment._id));
-                Alert.alert('Deleted', 'Comment has been deleted successfully.');
-              } else {
-                Alert.alert(
-                  'Delete Failed',
-                  result.message || 'Something went wrong. Please try again.',
-                  [{ text: 'OK' }]
-                );
-              }
-              setDeletingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(comment._id);
-                return next;
-              });
-            },
-          },
-        ],
-        { cancelable: true }
-      );
-    },
-    [pageId, platform]
-  );
+  const handleLike = useCallback((comment) => {
+    const isLiked = comment.is_liked === true;
+    addBusyId(setLikingIds, comment._id);
+    (async () => {
+      const result = await likeComment({
+        pageId,
+        commentId: comment.comment_id,
+        platform,
+        isLiked,
+      });
+      if (result.success) {
+        setComments(prev => prev.map(c =>
+          c._id === comment._id
+            ? { ...c, is_liked: result.comment.is_liked ?? !isLiked, page_actions: result.comment.page_actions }
+            : c
+        ));
+      } else {
+        Alert.alert(`${isLiked ? 'Unlike' : 'Like'} Failed`, result.message);
+      }
+      removeBusyId(setLikingIds, comment._id);
+    })();
+  }, [pageId, platform]);
 
-  const filteredComments = comments.filter((c) => {
+  const filteredComments = comments.filter(c => {
     if (statusFilter === 'replied') return c.pageHasReplied === true;
     if (statusFilter === 'pending') return !c.pageHasReplied;
     return true;
@@ -262,7 +263,6 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           <FilterButton title="New First" isActive={sort === 'desc'} onPress={() => setSort('desc')} />
           <FilterButton title="Old First" isActive={sort === 'asc'} onPress={() => setSort('asc')} />
         </View>
-
         <View className="flex-row items-center bg-slate-50 rounded-lg px-3 py-2 mb-3 border border-slate-200">
           <Search size={18} color="#94A3B8" />
           <TextInput
@@ -273,19 +273,10 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
             className="flex-1 ml-2 text-sm text-slate-800"
           />
         </View>
-
         <View className="flex-row">
           <FilterButton title="All" isActive={statusFilter === 'all'} onPress={() => setStatusFilter('all')} />
-          <FilterButton
-            title="Replied"
-            isActive={statusFilter === 'replied'}
-            onPress={() => setStatusFilter('replied')}
-          />
-          <FilterButton
-            title="Pending"
-            isActive={statusFilter === 'pending'}
-            onPress={() => setStatusFilter('pending')}
-          />
+          <FilterButton title="Replied" isActive={statusFilter === 'replied'} onPress={() => setStatusFilter('replied')} />
+          <FilterButton title="Pending" isActive={statusFilter === 'pending'} onPress={() => setStatusFilter('pending')} />
         </View>
       </View>
 
@@ -296,20 +287,20 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       )}
 
       {loading && comments.length === 0 && (
-        <View className="items-center py-10">
-          <ActivityIndicator size="large" color={BRAND} />
-        </View>
+        <View className="items-center py-10"><ActivityIndicator size="large" color={BRAND} /></View>
       )}
 
-      {filteredComments.map((item) => (
+      {filteredComments.map(item => (
         <CommentCard
           key={item._id}
           comment={item}
           isDeleting={deletingIds.has(item._id)}
-          onViewHistory={() => console.log('View history:', item.from?.name)}
+          isHiding={hidingIds.has(item._id)}
+          isLiking={likingIds.has(item._id)}
+          onViewHistory={() => console.log('View history:', item._id)}
           onPin={() => console.log('Pin:', item._id)}
-          onLike={() => console.log('Like:', item._id)}
-          onMessage={() => console.log('Message:', item.from?.name)}
+          onLike={() => handleLike(item)}
+          onHide={() => handleHide(item)}
           onDelete={() => handleDelete(item)}
         />
       ))}
@@ -318,24 +309,16 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         <View className="items-center justify-center py-20">
           <Text className="text-4xl mb-4">💬</Text>
           <Text className="text-slate-400 text-base">No comments found</Text>
-          <Text className="text-slate-400 text-sm mt-1">Try adjusting your search or filters</Text>
         </View>
       )}
 
       {hasMore && !loading && filteredComments.length > 0 && (
-        <TouchableOpacity
-          onPress={loadMore}
-          activeOpacity={0.8}
-          className="py-3 rounded-xl items-center mb-4"
-          style={{ backgroundColor: BRAND }}
-        >
+        <TouchableOpacity onPress={loadMore} activeOpacity={0.8} className="py-3 rounded-xl items-center mb-4" style={{ backgroundColor: BRAND }}>
           <Text className="text-white text-sm font-semibold">Load More</Text>
         </TouchableOpacity>
       )}
 
-      {loading && comments.length > 0 && (
-        <ActivityIndicator size="small" color={BRAND} className="py-4" />
-      )}
+      {loading && comments.length > 0 && <ActivityIndicator size="small" color={BRAND} className="py-4" />}
     </View>
   );
 };

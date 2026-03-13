@@ -1066,3 +1066,57 @@ export const deleteComment = async ({ pageId, commentId, platform = 'facebook' }
     return { success: false, message: error.message };
   }
 };
+
+export const hideComment = async ({ pageId, commentId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/hide`;
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to hide comment');
+    }
+
+    return { success: true, comment: data.comment };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const likeComment = async ({ pageId, commentId, platform = 'facebook', isLiked = false }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/like`;
+
+    const response = await fetch(url, {
+      method: isLiked ? 'DELETE' : 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to update like');
+    }
+
+    return { success: true, comment: data.comment };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
