@@ -1120,3 +1120,109 @@ export const likeComment = async ({ pageId, commentId, platform = 'facebook', is
     return { success: false, message: error.message };
   }
 };
+
+export const getAssignTeam = async ({ search = '', page = 1, perPage = 10 }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const url = `${BASE_URL}/user/assign_team?page=${page}&perPage=${perPage}&search=${search}`;
+
+    console.log('=== getAssignTeam ===');
+    console.log('URL:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    console.log('Assign team status:', response.status);
+    console.log('Assign team users count:', data.users?.length);
+
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch team');
+    }
+
+    return { success: true, users: data.users ?? [], pageInfo: data.pageInfo ?? {} };
+  } catch (error) {
+    console.log('getAssignTeam ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const assignCommentToUser = async ({ userId, commentIds, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const platformShort = { facebook: 'fb', instagram: 'ig', tiktok: 'tiktok', snapchat: 'snapchat' }[platform] ?? 'fb';
+    const url = `${BASE_URL}/${prefix}/assign`;
+
+    const body = { userId, platform: platformShort, commentIds };
+
+    console.log('=== assignCommentToUser ===');
+    console.log('URL:', url);
+    console.log('Body:', JSON.stringify(body));
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    console.log('Assign comment status:', response.status);
+    console.log('Assign comment response:', JSON.stringify(data));
+
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to assign comment');
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.log('assignCommentToUser ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const markCommentDone = async ({ pageId, commentId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/done`;
+
+    console.log('=== markCommentDone ===');
+    console.log('URL:', url);
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    console.log('Done response status:', response.status);
+    console.log('Done response:', JSON.stringify(data).substring(0, 300));
+
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to mark comment as done');
+    }
+
+    return { success: true, comment: data.comment };
+  } catch (error) {
+    console.log('markCommentDone ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};

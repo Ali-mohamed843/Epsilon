@@ -6,10 +6,10 @@ const IconButton = ({ icon: Icon, color = '#64748B', bgColor = 'bg-slate-100', o
     onPress={onPress}
     activeOpacity={0.7}
     disabled={disabled}
-    className={`w-9 h-9 rounded-lg ${bgColor} items-center justify-center`}
+    className={`w-7 h-7 rounded-lg ${bgColor} items-center justify-center`}
     style={[disabled ? { opacity: 0.5 } : {}, style]}
   >
-    <Icon size={18} color={color} />
+    <Icon size={15} color={color} />
   </TouchableOpacity>
 );
 
