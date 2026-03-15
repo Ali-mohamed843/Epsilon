@@ -1279,3 +1279,95 @@ export const getSavedReplies = async ({ pageId, platform = 'facebook', type = 'c
     return { success: false, message: error.message };
   }
 };
+
+
+const getUserPlatformPrefix = (platform) => {
+  switch (platform) {
+    case 'facebook': return 'fb-users';
+    case 'instagram': return 'ig-users';
+    case 'tiktok': return 'tiktok-users';
+    case 'snapchat': return 'snapchat-users';
+    default: return 'fb-users';
+  }
+};
+
+export const getUserComments = async ({ userId, pageId, platform = 'facebook', page = 1 }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getUserPlatformPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${userId}/page/${pageId}/comments?page=${page}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch user comments');
+    }
+
+    return { success: true, comments: data.comments ?? [], pageInfo: data.pageInfo ?? {} };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const getCommentThread = async ({ pageId, commentId, platform = 'facebook', page = 1 }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}?page=${page}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch comment thread');
+    }
+
+    return { success: true, comments: data.comments ?? [], pageInfo: data.pageInfo ?? {} };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const blockUser = async ({ pageId, userId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const platformPrefix = getPlatformPrefix(platform);
+    const url = `${BASE_URL}/${platformPrefix}/${pageId}/users/${userId}/block`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to block user');
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};

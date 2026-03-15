@@ -8,18 +8,23 @@ import {
 } from 'react-native';
 import { MoreVertical } from 'lucide-react-native';
 
-const MENU_ITEMS = [
-  { key: 'view_facebook', label: 'View On Facebook' },
-  { key: 'comment_thread', label: 'Comment Thread' },
-  { key: 'user_comments', label: 'User Comments' },
-  { key: 'view_post', label: 'View Post' },
-  { key: 'block', label: 'Block', danger: true },
-];
+const getMenuItems = (platform) => {
+  const platformLabel = platform === 'instagram' ? 'Instagram' : 'Facebook';
+  return [
+    { key: 'view_platform', label: `View On ${platformLabel}` },
+    { key: 'comment_thread', label: 'Comment Thread' },
+    { key: 'user_comments', label: 'User Comments' },
+    { key: 'view_post', label: 'View Post' },
+    { key: 'block', label: 'Block', danger: true },
+  ];
+};
 
-const KebabMenu = ({ onSelect, disabled = false }) => {
+const KebabMenu = ({ onSelect, disabled = false, platform = 'facebook' }) => {
   const [visible, setVisible] = useState(false);
   const [buttonPos, setButtonPos] = useState({ x: 0, y: 0 });
   const buttonRef = useRef(null);
+
+  const menuItems = getMenuItems(platform);
 
   const handleOpen = () => {
     buttonRef.current?.measureInWindow((x, y, width, height) => {
@@ -75,7 +80,7 @@ const KebabMenu = ({ onSelect, disabled = false }) => {
               borderColor: '#E2E8F0',
             }}
           >
-            {MENU_ITEMS.map((item, index) => (
+            {menuItems.map((item, index) => (
               <TouchableOpacity
                 key={item.key}
                 onPress={() => handleSelect(item.key)}
@@ -83,7 +88,7 @@ const KebabMenu = ({ onSelect, disabled = false }) => {
                 style={{
                   paddingHorizontal: 16,
                   paddingVertical: 10,
-                  borderBottomWidth: index < MENU_ITEMS.length - 1 ? 1 : 0,
+                  borderBottomWidth: index < menuItems.length - 1 ? 1 : 0,
                   borderBottomColor: '#F1F5F9',
                 }}
               >

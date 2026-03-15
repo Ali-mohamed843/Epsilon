@@ -7,14 +7,17 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
 } from 'react-native';
 import { Search, UserPlus, ThumbsUp, EyeOff, Eye, Trash2, CheckCircle, MessageCircle } from 'lucide-react-native';
-import { getPageComments, deleteComment, hideComment, likeComment, markCommentDone } from '@/Api/api';
+import { getPageComments, deleteComment, hideComment, likeComment, markCommentDone, blockUser } from '@/Api/api';
 import FilterButton from '@/components/comments/FilterButton';
 import IconButton from '@/components/comments/IconButton';
 import AssignModal from '@/components/comments/AssignModal';
 import KebabMenu from '@/components/comments/KebabMenu';
 import ReplyModal from '@/components/comments/ReplyModal';
+import UserCommentsSheet from '@/components/comments/UserCommentsSheet';
+import CommentThreadSheet from '@/components/comments/CommentThreadSheet';
 
 const BRAND = '#6e226e';
 const PER_PAGE = 30;
@@ -97,7 +100,7 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
           </View>
           <Text className="text-xs text-slate-500">{time}</Text>
         </View>
-        <KebabMenu onSelect={onMenuSelect} disabled={isBusy} />
+        <KebabMenu onSelect={onMenuSelect} disabled={isBusy} platform={platform} />
       </View>
 
       <Text className="text-sm text-slate-700 leading-5 mb-4">{comment.message}</Text>
@@ -208,6 +211,8 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [doningIds, setDoningIds] = useState(new Set());
   const [assignModal, setAssignModal] = useState({ visible: false, comment: null });
   const [replyModal, setReplyModal] = useState({ visible: false, comment: null });
+  const [userSheet, setUserSheet] = useState({ visible: false, userId: null, userName: null, userPicture: null });
+  const [threadSheet, setThreadSheet] = useState({ visible: false, commentId: null });
   const isFetching = useRef(false);
 
   const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
@@ -351,28 +356,59 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
     setAssignModal({ visible: false, comment: null });
   }, [assignModal.comment]);
 
+  const handleBlock = useCallback((comment) => {
+    const userName = comment.from?.name ?? 'this user';
+    Alert.alert('Block User', `Block ${userName}? They won't be able to comment on your posts.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block', style: 'destructive', onPress: async () => {
+          const result = await blockUser({ pageId, userId: comment.from?.id, platform });
+          if (result.success) {
+            Alert.alert('Blocked', `${userName} has been blocked.`);
+          } else {
+            Alert.alert('Block Failed', result.message);
+          }
+        }
+      }
+    ]);
+  }, [pageId, platform]);
+
   const handleMenuSelect = useCallback((comment, key) => {
     switch (key) {
-      case 'view_facebook':
-        console.log('View on platform:', comment.post?.permalink_url);
+      case 'view_platform': {
+        const url = comment.post?.permalink_url;
+        if (url) Linking.openURL(url);
+        else Alert.alert('Error', 'No link available');
         break;
-      case 'comment_thread':
-        console.log('Comment thread:', comment.comment_id);
+      }
+      case 'view_post': {
+        const url = comment.post?.permalink_url;
+        if (url) Linking.openURL(url);
+        else Alert.alert('Error', 'No post link available');
         break;
-      case 'user_comments':
-        console.log('User comments:', comment.from?.id);
+      }
+      case 'user_comments': {
+        setUserSheet({
+          visible: true,
+          userId: comment.from?.id,
+          userName: comment.from?.name,
+          userPicture: comment.from?.picture,
+        });
         break;
-      case 'view_post':
-        console.log('View post:', comment.post_id);
+      }
+      case 'comment_thread': {
+        setThreadSheet({
+          visible: true,
+          commentId: comment.comment_id,
+        });
         break;
-      case 'block':
-        Alert.alert('Block User', `Block ${comment.from?.name}?`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Block', style: 'destructive', onPress: () => console.log('Block:', comment.from?.id) },
-        ]);
+      }
+      case 'block': {
+        handleBlock(comment);
         break;
+      }
     }
-  }, []);
+  }, [handleBlock]);
 
   const filteredComments = comments.filter(c => {
     if (statusFilter === 'replied') return c.pageHasReplied === true;
@@ -463,6 +499,24 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         pageId={pageId}
         platform={platform}
         onClose={handleReplyClose}
+      />
+
+      <UserCommentsSheet
+        visible={userSheet.visible}
+        userId={userSheet.userId}
+        userName={userSheet.userName}
+        userPicture={userSheet.userPicture}
+        pageId={pageId}
+        platform={platform}
+        onClose={() => setUserSheet({ visible: false, userId: null, userName: null, userPicture: null })}
+      />
+
+      <CommentThreadSheet
+        visible={threadSheet.visible}
+        commentId={threadSheet.commentId}
+        pageId={pageId}
+        platform={platform}
+        onClose={() => setThreadSheet({ visible: false, commentId: null })}
       />
     </View>
   );
