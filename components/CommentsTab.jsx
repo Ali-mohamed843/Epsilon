@@ -373,45 +373,52 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
     ]);
   }, [pageId, platform]);
 
-  const handleMenuSelect = useCallback((comment, key) => {
-    switch (key) {
-      case 'view_platform': {
-        const url = comment.post?.permalink_url;
-        if (url) Linking.openURL(url);
-        else Alert.alert('Error', 'No link available');
-        break;
-      }
-      case 'view_post': {
-        const postId = comment.post_id;
-        if (postId && onNavigateToPost) {
-          onNavigateToPost(postId);
-        } else {
-          Alert.alert('Error', 'Cannot navigate to post');
-        }
-        break;
-      }
-      case 'user_comments': {
-        setUserSheet({
-          visible: true,
-          userId: comment.from?.id,
-          userName: comment.from?.name,
-          userPicture: comment.from?.picture,
-        });
-        break;
-      }
-      case 'comment_thread': {
-        setThreadSheet({
-          visible: true,
-          commentId: comment.comment_id,
-        });
-        break;
-      }
-      case 'block': {
-        handleBlock(comment);
-        break;
-      }
+  const getPostIdFromComment = (comment, platform) => {
+  if (platform === 'instagram') {
+    return comment.media?.id ?? comment.post_id ?? null;
+  }
+  return comment.post_id ?? null;
+};
+
+const handleMenuSelect = useCallback((comment, key) => {
+  switch (key) {
+    case 'view_platform': {
+      const url = comment.post?.permalink_url;
+      if (url) Linking.openURL(url);
+      else Alert.alert('Error', 'No link available');
+      break;
     }
-  }, [handleBlock]);
+    case 'view_post': {
+      const postId = getPostIdFromComment(comment, platform);
+      if (postId && onNavigateToPost) {
+        onNavigateToPost(postId);
+      } else {
+        Alert.alert('Error', 'Cannot navigate to post');
+      }
+      break;
+    }
+    case 'user_comments': {
+      setUserSheet({
+        visible: true,
+        userId: comment.from?.id,
+        userName: comment.from?.name,
+        userPicture: comment.from?.picture,
+      });
+      break;
+    }
+    case 'comment_thread': {
+      setThreadSheet({
+        visible: true,
+        commentId: comment.comment_id,
+      });
+      break;
+    }
+    case 'block': {
+      handleBlock(comment);
+      break;
+    }
+  }
+}, [handleBlock, platform, onNavigateToPost]);
 
   const filteredComments = comments.filter(c => {
     if (statusFilter === 'replied') return c.pageHasReplied === true;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -47,7 +47,7 @@ const ThreadCommentRow = ({ comment, isParent }) => {
               <Text className="text-xs text-green-700">Done</Text>
             </View>
           )}
-          {comment.is_hided && (
+          {(comment.is_hided || comment.hidden) && (
             <View className="px-2 py-0.5 rounded bg-amber-100">
               <Text className="text-xs text-amber-700">Hidden</Text>
             </View>
@@ -59,55 +59,100 @@ const ThreadCommentRow = ({ comment, isParent }) => {
 };
 
 const CommentThreadSheet = ({ visible, onClose, pageId, commentId, platform = 'facebook' }) => {
-  const [comments, setComments] = useState([]);
+  const [threadList, setThreadList] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const childrenRef = useRef(null);
+  const isLoadingRef = useRef(false);
 
-  const fetchThread = useCallback(async (pageNum = 1, reset = false) => {
-    setLoading(true);
-    setError(null);
+  const fetchThread = useCallback(async (pageNum = 1) => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+
+    if (pageNum === 1) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setLoadingMore(true);
+    }
 
     const result = await getCommentThread({ pageId, commentId, platform, page: pageNum });
 
-    setLoading(false);
+    isLoadingRef.current = false;
+
+    if (pageNum === 1) setLoading(false);
+    else setLoadingMore(false);
 
     if (!result.success) {
       setError(result.message);
       return;
     }
 
-    const incoming = result.comments;
-    setComments(prev => reset ? incoming : [...prev, ...incoming]);
-    setHasMore(pageNum < (result.pageInfo.totalPages ?? 1));
+    const comments = result.comments;
+    const pageInfo = result.pageInfo;
+
+    setTotalPages(pageInfo?.totalPages ?? 1);
+    setTotalItems(pageInfo?.totalItems ?? 0);
     setPage(pageNum);
-  }, [pageId, commentId, platform]);
+
+    if (!comments || comments.length === 0) {
+      if (pageNum === 1) setThreadList([]);
+      return;
+    }
+
+    const parentComment = comments[0];
+
+    if (pageNum === 1) {
+      childrenRef.current = parentComment.child_comments ?? [];
+      const list = [
+        { ...parentComment, _threadKey: `parent-${parentComment._id}`, _isParent: true },
+        ...(childrenRef.current).map((c, i) => ({
+          ...c,
+          _threadKey: `child-${c._id ?? i}-p1`,
+          _isParent: false,
+        })),
+      ];
+      setThreadList(list);
+    } else {
+      const newChildren = parentComment.child_comments ?? [];
+      const existingKeys = new Set(threadList.map(t => t._id));
+      const uniqueNew = newChildren.filter(c => !existingKeys.has(c._id));
+
+      if (uniqueNew.length > 0) {
+        setThreadList(prev => [
+          ...prev,
+          ...uniqueNew.map((c, i) => ({
+            ...c,
+            _threadKey: `child-${c._id ?? i}-p${pageNum}`,
+            _isParent: false,
+          })),
+        ]);
+      }
+    }
+  }, [pageId, commentId, platform, threadList]);
 
   useEffect(() => {
     if (visible && commentId) {
-      setComments([]);
+      setThreadList([]);
       setPage(1);
-      setHasMore(true);
-      fetchThread(1, true);
+      setTotalPages(1);
+      setTotalItems(0);
+      childrenRef.current = null;
+      fetchThread(1);
     }
-  }, [visible]);
+  }, [visible, commentId]);
 
-  const loadMore = () => {
-    if (!loading && hasMore) fetchThread(page + 1);
+  const handleLoadMore = () => {
+    if (!loadingMore && !isLoadingRef.current && page < totalPages) {
+      fetchThread(page + 1);
+    }
   };
 
-  const buildThreadList = () => {
-    if (comments.length === 0) return [];
-    const parent = comments[0];
-    const children = parent.child_comments ?? [];
-    return [
-      { ...parent, _isParent: true },
-      ...children.map(c => ({ ...c, _isParent: false })),
-    ];
-  };
-
-  const threadList = buildThreadList();
+  const replyCount = threadList.length > 1 ? threadList.length - 1 : 0;
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
@@ -120,7 +165,12 @@ const CommentThreadSheet = ({ visible, onClose, pageId, commentId, platform = 'f
           style={{ maxHeight: '80%' }}
         >
           <View className="flex-row items-center justify-between px-4 pt-4 pb-3 border-b border-slate-100">
-            <Text className="text-base font-bold text-slate-800">Comment Thread</Text>
+            <View>
+              <Text className="text-base font-bold text-slate-800">Comment Thread</Text>
+              <Text className="text-xs text-slate-400">
+                {replyCount > 0 ? `${replyCount} replies` : ''}{totalItems > 0 ? ` · ${totalItems} total` : ''}
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={onClose}
               className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
@@ -135,7 +185,7 @@ const CommentThreadSheet = ({ visible, onClose, pageId, commentId, platform = 'f
             </View>
           )}
 
-          {loading && comments.length === 0 ? (
+          {loading ? (
             <View className="items-center py-10">
               <ActivityIndicator size="large" color={BRAND} />
             </View>
@@ -146,14 +196,28 @@ const CommentThreadSheet = ({ visible, onClose, pageId, commentId, platform = 'f
           ) : (
             <FlatList
               data={threadList}
-              keyExtractor={(item, index) => item._id ?? `thread-${index}`}
+              keyExtractor={(item) => item._threadKey}
               renderItem={({ item }) => (
                 <ThreadCommentRow comment={item} isParent={item._isParent} />
               )}
-              onEndReached={loadMore}
-              onEndReachedThreshold={0.3}
               ListFooterComponent={
-                loading ? <ActivityIndicator size="small" color={BRAND} style={{ padding: 16 }} /> : null
+                <View>
+                  {loadingMore && (
+                    <ActivityIndicator size="small" color={BRAND} style={{ padding: 16 }} />
+                  )}
+                  {!loadingMore && page < totalPages && (
+                    <TouchableOpacity
+                      onPress={handleLoadMore}
+                      activeOpacity={0.8}
+                      className="py-3 mx-4 my-3 rounded-xl items-center"
+                      style={{ backgroundColor: BRAND }}
+                    >
+                      <Text className="text-white text-sm font-semibold">
+                        Load More ({page}/{totalPages})
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               }
             />
           )}

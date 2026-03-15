@@ -252,7 +252,7 @@ const LoginScreen = () => {
                     )}
                   </TouchableOpacity>
 
-                  <View className="flex-row items-center my-5">
+                  {/* <View className="flex-row items-center my-5">
                     <View className="flex-1 h-px bg-gray-200" />
                     <Text className="px-3 text-gray-400 text-sm">or</Text>
                     <View className="flex-1 h-px bg-gray-200" />
@@ -285,7 +285,7 @@ const LoginScreen = () => {
                         Reset here
                       </Text>
                     </Text>
-                  </View>
+                  </View> */}
                 </View>
               </View>
             </View>
