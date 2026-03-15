@@ -8,3 +8,6 @@
 	url = https://git.beeieg.com/ems/ems-social-app.git
 	tagOpt = --no-tags
 	fetch = +refs/*:refs/*
+[remote "github"]
+	url = https://github.com/Ali-mohamed843/Epsilon.git
+	fetch = +refs/heads/*:refs/remotes/github/*

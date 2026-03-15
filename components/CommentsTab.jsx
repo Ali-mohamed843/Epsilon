@@ -18,6 +18,7 @@ import KebabMenu from '@/components/comments/KebabMenu';
 import ReplyModal from '@/components/comments/ReplyModal';
 import UserCommentsSheet from '@/components/comments/UserCommentsSheet';
 import CommentThreadSheet from '@/components/comments/CommentThreadSheet';
+import HistoryModal from '@/components/comments/HistoryModal';
 
 const BRAND = '#6e226e';
 const PER_PAGE = 30;
@@ -214,6 +215,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   const [userSheet, setUserSheet] = useState({ visible: false, userId: null, userName: null, userPicture: null });
   const [threadSheet, setThreadSheet] = useState({ visible: false, commentId: null });
   const isFetching = useRef(false);
+  const [historyModal, setHistoryModal] = useState({ visible: false, comment: null });
 
   const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
     if (isFetching.current) return;
@@ -469,7 +471,7 @@ const handleMenuSelect = useCallback((comment, key) => {
           isHiding={hidingIds.has(item._id)}
           isLiking={likingIds.has(item._id)}
           isDoning={doningIds.has(item._id)}
-          onViewHistory={() => console.log('View history:', item._id)}
+          onViewHistory={() => setHistoryModal({ visible: true, comment: item })}
           onAssign={() => handleAssign(item)}
           onLike={() => handleLike(item)}
           onReply={() => handleReply(item)}
@@ -527,6 +529,13 @@ const handleMenuSelect = useCallback((comment, key) => {
         pageId={pageId}
         platform={platform}
         onClose={() => setThreadSheet({ visible: false, commentId: null })}
+      />
+
+      <HistoryModal
+        visible={historyModal.visible}
+        comment={historyModal.comment}
+        platform={platform}
+        onClose={() => setHistoryModal({ visible: false, comment: null })}
       />
     </View>
   );
