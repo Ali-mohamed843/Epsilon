@@ -1371,3 +1371,39 @@ export const blockUser = async ({ pageId, userId, platform = 'facebook' }) => {
     return { success: false, message: error.message };
   }
 };
+
+const getPlatformPostPrefix = (platform) => {
+  switch (platform) {
+    case 'facebook': return 'fb-post';
+    case 'instagram': return 'ig-post';
+    case 'tiktok': return 'tiktok-post';
+    case 'snapchat': return 'snapchat-post';
+    default: return 'fb-post';
+  }
+};
+export const getSinglePost = async ({ postId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformPostPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${postId}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch post');
+    }
+
+    return { success: true, post: data.data ?? {} };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};

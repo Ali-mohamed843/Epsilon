@@ -195,7 +195,7 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
   );
 };
 
-const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
+const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost }) => {
   const [sort, setSort] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -382,9 +382,12 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         break;
       }
       case 'view_post': {
-        const url = comment.post?.permalink_url;
-        if (url) Linking.openURL(url);
-        else Alert.alert('Error', 'No post link available');
+        const postId = comment.post_id;
+        if (postId && onNavigateToPost) {
+          onNavigateToPost(postId);
+        } else {
+          Alert.alert('Error', 'Cannot navigate to post');
+        }
         break;
       }
       case 'user_comments': {

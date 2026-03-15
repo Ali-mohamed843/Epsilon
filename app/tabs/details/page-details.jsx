@@ -59,8 +59,10 @@ const PageDetailsScreen = () => {
   const tabs = useMemo(() => getTabsForPlatform(platform), [platform]);
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [refreshing, setRefreshing] = useState(false);
+  const [focusPostId, setFocusPostId] = useState(null);
 
   const postTabRefreshRef = useRef(null);
+  const scrollRef = useRef(null);
 
   const registerRefresh = useCallback((fn) => {
     postTabRefreshRef.current = fn;
@@ -74,6 +76,18 @@ const PageDetailsScreen = () => {
     setRefreshing(false);
   }, []);
 
+  const handleNavigateToPost = useCallback((postId) => {
+    setFocusPostId(postId);
+    setActiveTab('Posts');
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }, 100);
+  }, []);
+
+  const handleClearFocus = useCallback(() => {
+    setFocusPostId(null);
+  }, []);
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'Posts':
@@ -83,6 +97,8 @@ const PageDetailsScreen = () => {
             pageId={pageId}
             pageName={pageName}
             platform={platform}
+            focusPostId={focusPostId}
+            onClearFocus={handleClearFocus}
           />
         );
       case 'Insights':
@@ -94,7 +110,14 @@ const PageDetailsScreen = () => {
       case 'Team':
         return <TeamTab pageId={pageId} pageName={pageName} platform={platform} />;
       case 'Comments':
-        return <CommentsTab pageId={pageId} pageName={pageName} platform={platform} />;
+        return (
+          <CommentsTab
+            pageId={pageId}
+            pageName={pageName}
+            platform={platform}
+            onNavigateToPost={handleNavigateToPost}
+          />
+        );
       case 'Messages':
         return <MessagesTab pageId={pageId} pageName={pageName} platform={platform} />;
       default:
@@ -148,13 +171,17 @@ const PageDetailsScreen = () => {
                     key={tab}
                     title={tab}
                     isActive={activeTab === tab}
-                    onPress={() => setActiveTab(tab)}
+                    onPress={() => {
+                      if (tab !== 'Posts') setFocusPostId(null);
+                      setActiveTab(tab);
+                    }}
                   />
                 ))}
               </ScrollView>
             </View>
 
             <ScrollView
+              ref={scrollRef}
               className="flex-1"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{

@@ -3,8 +3,8 @@ import {
   View, Text, TouchableOpacity, Image,
   ActivityIndicator, Linking, Alert,
 } from 'react-native';
-import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play, Pencil, Trash2 } from 'lucide-react-native';
-import { getPagePosts, deleteFacebookPost } from '@/Api/api';
+import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play, Pencil, Trash2, ArrowLeft } from 'lucide-react-native';
+import { getPagePosts, deleteFacebookPost, getSinglePost } from '@/Api/api';
 import CreatePostModal from '@/components/posts/CreatePostModal';
 import EditPostModal from '@/components/posts/EditPostModal';
 import CreateIgPostModal from '@/components/instagram/CreateIgPostModal';
@@ -167,7 +167,7 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
   );
 };
 
-const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }) => {
+const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, focusPostId, onClearFocus }) => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -176,9 +176,13 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }
   const [hasMore, setHasMore] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
+  const [focusedPost, setFocusedPost] = useState(null);
+  const [focusLoading, setFocusLoading] = useState(false);
+  const [focusError, setFocusError] = useState(null);
 
   const perPage = 20;
   const isInstagram = platform === 'instagram';
+  const isFocused = !!focusPostId;
 
   const fetchPosts = useCallback(async (page) => {
     if (page === 1) { setLoading(true); setError(''); }
@@ -203,9 +207,34 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }
     setLoadingMore(false);
   }, [pageId, platform]);
 
+  const fetchSinglePost = useCallback(async (postId) => {
+    setFocusLoading(true);
+    setFocusError(null);
+    setFocusedPost(null);
+
+    const result = await getSinglePost({ postId, platform });
+
+    setFocusLoading(false);
+
+    if (result.success && result.post) {
+      setFocusedPost(result.post);
+    } else {
+      setFocusError(result.message || 'Post not found');
+    }
+  }, [platform]);
+
   useEffect(() => {
     fetchPosts(1);
   }, [fetchPosts]);
+
+  useEffect(() => {
+    if (focusPostId) {
+      fetchSinglePost(focusPostId);
+    } else {
+      setFocusedPost(null);
+      setFocusError(null);
+    }
+  }, [focusPostId]);
 
   useEffect(() => {
     if (onRegisterRefresh) {
@@ -223,12 +252,13 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }
     const result = await deleteFacebookPost({ pageId, postId: post.post_id });
     if (result.success) {
       setPosts((prev) => prev.filter((p) => p.post_id !== post.post_id));
+      if (isFocused) onClearFocus?.();
     } else {
       Alert.alert('Error', result.message || 'Failed to delete post');
     }
   };
 
-  if (loading) {
+  if (!isFocused && loading) {
     return (
       <View className="flex-1 items-center justify-center py-20">
         <ActivityIndicator size="large" color={BRAND_COLOR} />
@@ -237,7 +267,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }
     );
   }
 
-  if (error && posts.length === 0) {
+  if (!isFocused && error && posts.length === 0) {
     return (
       <View className="flex-1 items-center justify-center py-20 px-6">
         <Text className="text-red-500 text-base font-medium text-center mb-2">Failed to load posts</Text>
@@ -275,47 +305,94 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }
         onPostUpdated={() => { setEditingPost(null); fetchPosts(1); }}
       />
 
-      <TouchableOpacity
-        onPress={() => setShowCreateModal(true)}
-        activeOpacity={0.8}
-        className="w-full py-3 rounded-lg flex-row items-center justify-center mb-4"
-        style={{ backgroundColor: BRAND_COLOR }}
-      >
-        <Plus size={20} color="#ffffff" strokeWidth={2} />
-        <Text className="text-white text-sm font-semibold ml-2">Add New Post</Text>
-      </TouchableOpacity>
+      {isFocused ? (
+        <>
+          <TouchableOpacity
+            onPress={onClearFocus}
+            activeOpacity={0.7}
+            className="flex-row items-center mb-4 py-2"
+          >
+            <ArrowLeft size={18} color={BRAND_COLOR} />
+            <Text className="text-sm font-semibold ml-2" style={{ color: BRAND_COLOR }}>Back to all posts</Text>
+          </TouchableOpacity>
 
-      {posts.map((post) => (
-        <PostCard
-          key={post._id || post.post_id}
-          post={post}
-          pageName={pageName}
-          platform={platform}
-          onEdit={setEditingPost}
-          onDelete={handleDelete}
-        />
-      ))}
+          {focusLoading && (
+            <View className="items-center py-10">
+              <ActivityIndicator size="large" color={BRAND_COLOR} />
+              <Text className="text-slate-500 text-sm mt-3">Loading post...</Text>
+            </View>
+          )}
 
-      {hasMore && posts.length > 0 && (
-        <TouchableOpacity
-          onPress={() => { if (!loadingMore && hasMore) fetchPosts(currentPage + 1); }}
-          activeOpacity={0.7}
-          className="w-full py-3 rounded-lg items-center justify-center mb-4"
-          style={{ backgroundColor: '#6e226e12' }}
-          disabled={loadingMore}
-        >
-          {loadingMore
-            ? <ActivityIndicator size="small" color={BRAND_COLOR} />
-            : <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>Load More Posts</Text>
-          }
-        </TouchableOpacity>
-      )}
+          {focusError && !focusLoading && (
+            <View className="items-center py-10">
+              <Text className="text-red-500 text-base mb-2">Failed to load post</Text>
+              <Text className="text-slate-400 text-xs mb-4">{focusError}</Text>
+              <TouchableOpacity
+                onPress={onClearFocus}
+                activeOpacity={0.7}
+                className="px-6 py-2.5 rounded-lg"
+                style={{ backgroundColor: BRAND_COLOR }}
+              >
+                <Text className="text-white text-sm font-semibold">View All Posts</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-      {posts.length === 0 && (
-        <View className="flex-1 items-center justify-center py-20">
-          <Text className="text-slate-400 text-base">No posts yet</Text>
-          <Text className="text-slate-400 text-sm mt-1">Create your first post!</Text>
-        </View>
+          {focusedPost && !focusLoading && (
+            <PostCard
+              post={focusedPost}
+              pageName={pageName}
+              platform={platform}
+              onEdit={setEditingPost}
+              onDelete={handleDelete}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <TouchableOpacity
+            onPress={() => setShowCreateModal(true)}
+            activeOpacity={0.8}
+            className="w-full py-3 rounded-lg flex-row items-center justify-center mb-4"
+            style={{ backgroundColor: BRAND_COLOR }}
+          >
+            <Plus size={20} color="#ffffff" strokeWidth={2} />
+            <Text className="text-white text-sm font-semibold ml-2">Add New Post</Text>
+          </TouchableOpacity>
+
+          {posts.map((post) => (
+            <PostCard
+              key={post._id || post.post_id}
+              post={post}
+              pageName={pageName}
+              platform={platform}
+              onEdit={setEditingPost}
+              onDelete={handleDelete}
+            />
+          ))}
+
+          {hasMore && posts.length > 0 && (
+            <TouchableOpacity
+              onPress={() => { if (!loadingMore && hasMore) fetchPosts(currentPage + 1); }}
+              activeOpacity={0.7}
+              className="w-full py-3 rounded-lg items-center justify-center mb-4"
+              style={{ backgroundColor: '#6e226e12' }}
+              disabled={loadingMore}
+            >
+              {loadingMore
+                ? <ActivityIndicator size="small" color={BRAND_COLOR} />
+                : <Text className="text-sm font-semibold" style={{ color: BRAND_COLOR }}>Load More Posts</Text>
+              }
+            </TouchableOpacity>
+          )}
+
+          {posts.length === 0 && (
+            <View className="flex-1 items-center justify-center py-20">
+              <Text className="text-slate-400 text-base">No posts yet</Text>
+              <Text className="text-slate-400 text-sm mt-1">Create your first post!</Text>
+            </View>
+          )}
+        </>
       )}
     </View>
   );
