@@ -8,17 +8,18 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { Search, UserPlus, ThumbsUp, EyeOff, Eye, Trash2, CheckCircle } from 'lucide-react-native';
+import { Search, UserPlus, ThumbsUp, EyeOff, Eye, Trash2, CheckCircle, MessageCircle } from 'lucide-react-native';
 import { getPageComments, deleteComment, hideComment, likeComment, markCommentDone } from '@/Api/api';
 import FilterButton from '@/components/comments/FilterButton';
 import IconButton from '@/components/comments/IconButton';
 import AssignModal from '@/components/comments/AssignModal';
 import KebabMenu from '@/components/comments/KebabMenu';
+import ReplyModal from '@/components/comments/ReplyModal';
 
 const BRAND = '#6e226e';
 const PER_PAGE = 30;
 
-const CommentCard = ({ comment, onViewHistory, onAssign, onLike, onHide, onDelete, onDone, onMenuSelect, isDeleting, isHiding, isLiking, isDoning }) => {
+const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onReply, onHide, onDelete, onDone, onMenuSelect, isDeleting, isHiding, isLiking, isDoning }) => {
   const avatarUrl = comment.from?.picture;
   const name = comment.from?.name ?? 'Unknown';
   const time = comment.created_time ? new Date(comment.created_time).toLocaleString() : '';
@@ -27,18 +28,10 @@ const CommentCard = ({ comment, onViewHistory, onAssign, onLike, onHide, onDelet
   const isAssigned = !!comment.assigned_to;
   const isDone = comment.is_done === true;
   const isBusy = isDeleting || isHiding || isLiking || isDoning;
+  const isFacebook = platform === 'facebook';
 
   return (
-    <View
-      className="bg-white rounded-xl p-4 mb-3 border border-slate-200"
-      style={
-        isDone
-          ? { borderColor: '#22C55E', backgroundColor: '#F0FDF4' }
-          : isHidden
-            ? { borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }
-            : {}
-      }
-    >
+    <View className="bg-white rounded-xl p-4 mb-3 border border-slate-200">
       {isBusy && (
         <View
           style={{
@@ -91,7 +84,7 @@ const CommentCard = ({ comment, onViewHistory, onAssign, onLike, onHide, onDelet
                 <Text className="text-xs text-amber-700 font-medium">Hidden</Text>
               </View>
             )}
-            {isLiked && (
+            {isFacebook && isLiked && (
               <View className="ml-2 px-2 py-0.5 rounded bg-purple-100">
                 <Text className="text-xs font-medium" style={{ color: BRAND }}>Liked</Text>
               </View>
@@ -153,16 +146,28 @@ const CommentCard = ({ comment, onViewHistory, onAssign, onLike, onHide, onDelet
             size={14}
             buttonSize={7}
           />
-          <IconButton
-            icon={ThumbsUp}
-            color={isLiked ? '#ffffff' : BRAND}
-            bgColor={isLiked ? '' : 'bg-purple-100'}
-            style={isLiked ? { backgroundColor: BRAND } : {}}
-            onPress={onLike}
-            disabled={isBusy}
-            size={14}
-            buttonSize={7}
-          />
+          {isFacebook ? (
+            <IconButton
+              icon={ThumbsUp}
+              color={isLiked ? '#ffffff' : BRAND}
+              bgColor={isLiked ? '' : 'bg-purple-100'}
+              style={isLiked ? { backgroundColor: BRAND } : {}}
+              onPress={onLike}
+              disabled={isBusy}
+              size={14}
+              buttonSize={7}
+            />
+          ) : (
+            <IconButton
+              icon={MessageCircle}
+              color={BRAND}
+              bgColor="bg-purple-100"
+              onPress={onReply}
+              disabled={isBusy}
+              size={14}
+              buttonSize={7}
+            />
+          )}
           <IconButton
             icon={isHidden ? Eye : EyeOff}
             color={isHidden ? '#F59E0B' : '#64748B'}
@@ -202,6 +207,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const [likingIds, setLikingIds] = useState(new Set());
   const [doningIds, setDoningIds] = useState(new Set());
   const [assignModal, setAssignModal] = useState({ visible: false, comment: null });
+  const [replyModal, setReplyModal] = useState({ visible: false, comment: null });
   const isFetching = useRef(false);
 
   const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
@@ -272,7 +278,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           const result = await hideComment({ pageId, commentId: comment.comment_id, platform });
           if (result.success) {
             setComments(prev => prev.map(c =>
-              c._id === comment._id ? { ...c, is_hided: result.comment.is_hided } : c
+              c._id === comment._id ? { ...c, is_hided: result.comment?.is_hided ?? !isHidden } : c
             ));
           } else {
             Alert.alert(`${action} Failed`, result.message);
@@ -284,6 +290,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   }, [pageId, platform]);
 
   const handleLike = useCallback((comment) => {
+    if (platform !== 'facebook') return;
     const isLiked = comment.is_liked === true;
     addBusyId(setLikingIds, comment._id);
     (async () => {
@@ -300,6 +307,14 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
       removeBusyId(setLikingIds, comment._id);
     })();
   }, [pageId, platform]);
+
+  const handleReply = useCallback((comment) => {
+    setReplyModal({ visible: true, comment });
+  }, []);
+
+  const handleReplyClose = useCallback(() => {
+    setReplyModal({ visible: false, comment: null });
+  }, []);
 
   const handleDone = useCallback((comment) => {
     Alert.alert('Mark as Done', 'Mark this comment as done?', [
@@ -339,7 +354,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
   const handleMenuSelect = useCallback((comment, key) => {
     switch (key) {
       case 'view_facebook':
-        console.log('View on Facebook:', comment.post?.permalink_url);
+        console.log('View on platform:', comment.post?.permalink_url);
         break;
       case 'comment_thread':
         console.log('Comment thread:', comment.comment_id);
@@ -403,6 +418,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         <CommentCard
           key={item._id}
           comment={item}
+          platform={platform}
           isDeleting={deletingIds.has(item._id)}
           isHiding={hidingIds.has(item._id)}
           isLiking={likingIds.has(item._id)}
@@ -410,6 +426,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
           onViewHistory={() => console.log('View history:', item._id)}
           onAssign={() => handleAssign(item)}
           onLike={() => handleLike(item)}
+          onReply={() => handleReply(item)}
           onHide={() => handleHide(item)}
           onDelete={() => handleDelete(item)}
           onDone={() => handleDone(item)}
@@ -438,6 +455,14 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook' }) => {
         assignedTo={assignModal.comment?.assigned_to}
         platform={platform}
         onClose={handleAssignClose}
+      />
+
+      <ReplyModal
+        visible={replyModal.visible}
+        comment={replyModal.comment}
+        pageId={pageId}
+        platform={platform}
+        onClose={handleReplyClose}
       />
     </View>
   );

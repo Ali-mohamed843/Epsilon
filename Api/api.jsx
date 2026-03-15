@@ -1032,7 +1032,7 @@ export const deleteFacebookPost = async ({ pageId, postId }) => {
 const getPlatformCommentPrefix = (platform) => {
   switch (platform) {
     case 'facebook': return 'fb-comments';
-    case 'instagram': return 'insta-comments';
+    case 'instagram': return 'ig-comments';
     case 'tiktok': return 'tiktok-comments';
     case 'snapchat': return 'snapchat-comments';
     default: return 'fb-comments';
@@ -1223,6 +1223,59 @@ export const markCommentDone = async ({ pageId, commentId, platform = 'facebook'
     return { success: true, comment: data.comment };
   } catch (error) {
     console.log('markCommentDone ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const getInquiryTypes = async () => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const url = `${BASE_URL}/inquiry-types`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch inquiry types');
+    }
+
+    return { success: true, inquiryTypes: data.data?.inquiryTypes ?? [] };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const getSavedReplies = async ({ pageId, platform = 'facebook', type = 'comment', page = 1, perPage = 30 }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const platformShort = { facebook: 'fb', instagram: 'ig', tiktok: 'tiktok', snapchat: 'snapchat' }[platform] ?? 'fb';
+    const url = `${BASE_URL}/saved_replies?page=${page}&perPage=${perPage}&pageId=${pageId}&platform=${platformShort}&type=${type}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to fetch saved replies');
+    }
+
+    return { success: true, replies: data.data?.replies ?? [] };
+  } catch (error) {
     return { success: false, message: error.message };
   }
 };
