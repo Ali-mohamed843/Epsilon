@@ -241,15 +241,62 @@ const MessagesTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefres
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  // useSocketEvent(SOCKET_EVENTS.NEW_MESSAGE, (data) => {
+  // if (!data) return;
+  // fetchChats(1, true);
+  // }, [pageId]);
+
+  // useSocketEvent(SOCKET_EVENTS.IG_NEW_MESSAGE, (data) => {
+  //   if (!data) return;
+  //   if (platform !== 'instagram') return;
+  //   fetchChats(1, true);
+  // }, [pageId, platform]);
+
   useSocketEvent(SOCKET_EVENTS.NEW_MESSAGE, (data) => {
   if (!data) return;
-  fetchChats(1, true);
+  const chatId = data.chat_id || data.chatId || data.conversation_id;
+  if (!chatId) return;
+
+  setChats(prev => {
+    const existingIndex = prev.findIndex(c => c._id === chatId);
+
+    if (existingIndex >= 0) {
+      const updated = [...prev];
+      const chat = { ...updated[existingIndex] };
+      chat.last_message = data.message?.text || data.text || chat.last_message;
+      chat.last_message_at = data.sent_at || data.created_at || new Date().toISOString();
+      chat.seenByAgent = false;
+      updated.splice(existingIndex, 1);
+      return [chat, ...updated];
+    }
+
+    return prev;
+  });
 }, [pageId]);
 
 useSocketEvent(SOCKET_EVENTS.IG_NEW_MESSAGE, (data) => {
   if (!data) return;
   if (platform !== 'instagram') return;
-  fetchChats(1, true);
+  const chatId = data.chat_id || data.chatId || data.conversation_id;
+  if (!chatId) return;
+
+  setChats(prev => {
+    const existingIndex = prev.findIndex(c => c._id === chatId);
+
+    if (existingIndex >= 0) {
+      const updated = [...prev];
+      const chat = { ...updated[existingIndex] };
+      chat.latest_message = {
+        text: data.message?.text || data.text || '',
+        sent_at: data.sent_at || data.created_at || new Date().toISOString(),
+      };
+      chat.seenByAgent = false;
+      updated.splice(existingIndex, 1);
+      return [chat, ...updated];
+    }
+
+    return prev;
+  });
 }, [pageId, platform]);
 
   const filteredChats = chats.filter((chat) => {

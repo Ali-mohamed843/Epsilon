@@ -162,7 +162,7 @@ const CommentThreadSheet = ({ visible, onClose, pageId, commentId, platform = 'f
       >
         <View
           className="bg-white rounded-2xl w-[92%]"
-          style={{ maxHeight: '80%' }}
+          style={{ maxHeight: '80%', overflow: 'hidden' }}
         >
           <View className="flex-row items-center justify-between px-4 pt-4 pb-3 border-b border-slate-100">
             <View>

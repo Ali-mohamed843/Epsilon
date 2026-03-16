@@ -63,6 +63,7 @@ const PageDetailsScreen = () => {
   const commentsTabRefreshRef = useRef(null);
 
   const postTabRefreshRef = useRef(null);
+  const messagesTabRefreshRef = useRef(null);
   const scrollRef = useRef(null);
 
   const registerRefresh = useCallback((fn) => {
@@ -70,6 +71,9 @@ const PageDetailsScreen = () => {
   }, []);
   const registerCommentsRefresh = useCallback((fn) => {
   commentsTabRefreshRef.current = fn;
+}, []);
+const registerMessagesRefresh = useCallback((fn) => {
+  messagesTabRefreshRef.current = fn;
 }, []);
 
   const onRefresh = useCallback(async () => {
@@ -79,6 +83,9 @@ const PageDetailsScreen = () => {
   }
   if (activeTab === 'Comments' && commentsTabRefreshRef.current) {
     await commentsTabRefreshRef.current();
+  }
+  if (activeTab === 'Messages' && messagesTabRefreshRef.current) {
+    await messagesTabRefreshRef.current();
   }
   setRefreshing(false);
 }, [activeTab]);
@@ -127,7 +134,14 @@ const PageDetailsScreen = () => {
           />
         );
       case 'Messages':
-        return <MessagesTab pageId={pageId} pageName={pageName} platform={platform} />;
+        return (
+          <MessagesTab
+            pageId={pageId}
+            pageName={pageName}
+            platform={platform}
+            onRegisterRefresh={registerMessagesRefresh}
+          />
+        );
       default:
         return null;
     }

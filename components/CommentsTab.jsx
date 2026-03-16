@@ -284,6 +284,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
     return () => clearTimeout(t);
   }, [searchInput]);
 
+
   const loadMore = () => {
     if (!loading && hasMore && !isFetching.current) fetchComments({ pageNum: page + 1 });
   };

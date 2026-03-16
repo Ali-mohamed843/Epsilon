@@ -43,7 +43,7 @@ const getMediaUrl = (post) => {
   return null;
 };
 
-const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
+const PostCard = ({ post, pageName, platform, onEdit, onDelete, isDeleting }) => {
   const [imgError, setImgError] = useState(false);
   const avatarLetter = pageName?.charAt(0)?.toUpperCase() || 'P';
   const fromName = post.from?.name || pageName;
@@ -71,6 +71,26 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
 
   return (
     <View className="bg-white rounded-xl p-4 mb-4 border border-slate-200">
+      {isDeleting && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 10,
+            borderRadius: 12,
+            backgroundColor: 'rgba(255,255,255,0.7)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <ActivityIndicator size="small" color="#DC2626" />
+          <Text style={{ color: '#DC2626', fontSize: 12, marginTop: 4 }}>Deleting...</Text>
+        </View>
+      )}
+
       <View className="flex-row items-center mb-3">
         <View className="w-10 h-10 rounded-full items-center justify-center mr-2.5" style={{ backgroundColor: '#6e226e20' }}>
           <Text style={{ color: BRAND_COLOR }} className="font-semibold text-sm">{avatarLetter}</Text>
@@ -89,12 +109,12 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
 
         <View className="flex-row items-center">
           {isFacebook && !isVideo && (
-            <TouchableOpacity onPress={() => onEdit(post)} activeOpacity={0.7} className="p-2 mr-1">
+            <TouchableOpacity onPress={() => onEdit(post)} activeOpacity={0.7} disabled={isDeleting} className="p-2 mr-1">
               <Pencil size={16} color={BRAND_COLOR} />
             </TouchableOpacity>
           )}
           {isFacebook && (
-            <TouchableOpacity onPress={handleDelete} activeOpacity={0.7} className="p-2 mr-1">
+            <TouchableOpacity onPress={handleDelete} activeOpacity={0.7} disabled={isDeleting} className="p-2 mr-1">
               <Trash2 size={16} color="#ef4444" />
             </TouchableOpacity>
           )}
@@ -106,7 +126,7 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
       )}
 
       {hasMedia && (
-        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} className="w-full aspect-video rounded-lg mb-3 overflow-hidden bg-slate-100">
+        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} disabled={isDeleting} className="w-full aspect-video rounded-lg mb-3 overflow-hidden bg-slate-100">
           <Image source={{ uri: mediaUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" onError={() => setImgError(true)} />
           {isVideo && (
             <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}>
@@ -119,7 +139,7 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete }) => {
       )}
 
       {!hasMedia && post.post_type && (
-        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} className="w-full h-32 rounded-lg mb-3 bg-slate-100 items-center justify-center">
+        <TouchableOpacity onPress={handleOpenPost} activeOpacity={0.9} disabled={isDeleting} className="w-full h-32 rounded-lg mb-3 bg-slate-100 items-center justify-center">
           {isVideo ? (
             <>
               <Play size={32} color="#94A3B8" />
@@ -179,6 +199,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
   const [focusedPost, setFocusedPost] = useState(null);
   const [focusLoading, setFocusLoading] = useState(false);
   const [focusError, setFocusError] = useState(null);
+  const [deletingPostId, setDeletingPostId] = useState(null);
 
   const perPage = 20;
   const isInstagram = platform === 'instagram';
@@ -242,13 +263,29 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
     }
   }, [onRegisterRefresh, fetchPosts]);
 
-  useSocketEvent(SOCKET_EVENTS.POST_ADD, () => { fetchPosts(1); }, [pageId]);
-  useSocketEvent(SOCKET_EVENTS.POST_UPDATE, () => { fetchPosts(1); }, [pageId]);
+  useSocketEvent(SOCKET_EVENTS.POST_ADD, (data) => {
+    if (data?.page_id !== pageId) return;
+    setPosts(prev => {
+      const exists = prev.some(p => p._id === data._id || p.post_id === data.post_id);
+      if (exists) return prev;
+      return [data, ...prev];
+    });
+  }, [pageId]);
+
+  useSocketEvent(SOCKET_EVENTS.POST_UPDATE, (data) => {
+    if (data?.page_id !== pageId) return;
+    setPosts(prev => prev.map(p =>
+      (p._id === data._id || p.post_id === data.post_id) ? { ...p, ...data } : p
+    ));
+  }, [pageId]);
+
   useSocketEvent(SOCKET_EVENTS.POST_DELETE, (data) => {
-    setPosts((prev) => prev.filter((p) => p._id !== data._id && p.post_id !== data.post_id));
+    if (!data) return;
+    setPosts(prev => prev.filter(p => p._id !== data._id && p.post_id !== data.post_id));
   }, [pageId]);
 
   const handleDelete = async (post) => {
+    setDeletingPostId(post.post_id);
     const result = await deleteFacebookPost({ pageId, postId: post.post_id });
     if (result.success) {
       setPosts((prev) => prev.filter((p) => p.post_id !== post.post_id));
@@ -256,6 +293,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
     } else {
       Alert.alert('Error', result.message || 'Failed to delete post');
     }
+    setDeletingPostId(null);
   };
 
   if (!isFocused && loading) {
@@ -345,6 +383,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
               platform={platform}
               onEdit={setEditingPost}
               onDelete={handleDelete}
+              isDeleting={deletingPostId === focusedPost.post_id}
             />
           )}
         </>
@@ -368,6 +407,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
               platform={platform}
               onEdit={setEditingPost}
               onDelete={handleDelete}
+              isDeleting={deletingPostId === post.post_id}
             />
           ))}
 

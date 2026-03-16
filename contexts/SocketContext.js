@@ -2,9 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import {
   connectSocket,
   joinPages,
-  onSocketEvent,
   disconnectSocket,
   isConnected,
+  getSocket,
 } from '@/services/socketService';
 
 const SocketContext = createContext(null);
@@ -27,30 +27,57 @@ export const SocketProvider = ({ children }) => {
   const listenersRef = useRef({});
 
   useEffect(() => {
-    const socket = connectSocket();
+    connectSocket();
 
-    const unsubConnect = onSocketEvent('connect', () => {
-      setConnected(true);
-    });
+    const checkSocket = setInterval(() => {
+      const socket = getSocket();
+      if (!socket) return;
 
-    const unsubDisconnect = onSocketEvent('disconnect', () => {
-      setConnected(false);
-    });
+      clearInterval(checkSocket);
 
-    const cleanups = Object.values(SOCKET_EVENTS).map((event) => {
-      return onSocketEvent(event, (data) => {
-        console.log(`Socket event [${event}]:`, JSON.stringify(data).substring(0, 300));
-        const callbacks = listenersRef.current[event];
-        if (callbacks) {
-          callbacks.forEach((cb) => cb(data));
-        }
+      console.log('>>>>>> SOCKET SETUP: Socket found, registering listeners');
+      console.log('>>>>>> SOCKET ID:', socket.id);
+      console.log('>>>>>> SOCKET CONNECTED:', socket.connected);
+
+      socket.onAny((eventName, ...args) => {
+        console.log('>>>>>> GLOBAL SOCKET EVENT:', eventName);
+        console.log('>>>>>> DATA:', JSON.stringify(args).substring(0, 500));
       });
-    });
+
+      socket.on('connect', () => {
+        console.log('>>>>>> SOCKET CONNECTED:', socket.id);
+        setConnected(true);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log('>>>>>> SOCKET DISCONNECTED:', reason);
+        setConnected(false);
+      });
+
+      Object.values(SOCKET_EVENTS).forEach((event) => {
+        socket.on(event, (data) => {
+          console.log(`>>>>>> Socket event [${event}]:`, JSON.stringify(data).substring(0, 300));
+          const callbacks = listenersRef.current[event];
+          if (callbacks) {
+            callbacks.forEach((cb) => cb(data));
+          }
+        });
+      });
+
+      if (socket.connected) {
+        setConnected(true);
+      }
+    }, 100);
 
     return () => {
-      unsubConnect();
-      unsubDisconnect();
-      cleanups.forEach((cleanup) => cleanup());
+      clearInterval(checkSocket);
+      const socket = getSocket();
+      if (socket) {
+        socket.offAny();
+        Object.values(SOCKET_EVENTS).forEach((event) => {
+          socket.removeAllListeners(event);
+        });
+      }
       disconnectSocket();
     };
   }, []);

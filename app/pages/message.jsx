@@ -262,42 +262,6 @@ const ChatScreen = () => {
     setLoading(false);
   };
 
-  const fetchMessagesSilent = async () => {
-    try {
-      const result = await getChatMessages(chatId, platform);
-      if (result.success) {
-        const rawMessages = result.messages || [];
-        const sorted = rawMessages.sort((a, b) => {
-          const getTime = (msg) => {
-            if (msg.timestamp && typeof msg.timestamp === 'number') return msg.timestamp;
-            const dateStr = msg.sent_at || msg.created_at;
-            if (dateStr) return new Date(dateStr).getTime();
-            return 0;
-          };
-          return getTime(a) - getTime(b);
-        });
-
-        setMessages(prev => {
-          if (sorted.length !== prev.length) return sorted;
-          const lastNew = sorted[sorted.length - 1];
-          const lastOld = prev[prev.length - 1];
-          if (lastNew?._id !== lastOld?._id || lastNew?.mid !== lastOld?.mid) return sorted;
-          return prev;
-        });
-      }
-    } catch (err) {}
-  };
-
-  useEffect(() => {
-    if (!chatId || loading) return;
-
-    const interval = setInterval(() => {
-      fetchMessagesSilent();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [chatId, loading]);
-
   useEffect(() => {
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
