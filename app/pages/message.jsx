@@ -13,13 +13,9 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  ArrowLeft,
-  Send,
-  RefreshCw,
-} from 'lucide-react-native';
+import { ArrowLeft, Send, RefreshCw } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getChatMessages, sendChatMessage } from '@/Api/api';
+import { getChatMessages, sendChatMessage, sendFacebookMessage } from '@/Api/api';
 
 const BRAND = '#6e226e';
 
@@ -53,6 +49,10 @@ const DateDivider = ({ date }) => (
 const MessageBubble = ({ message, isSent, userPicture, platform }) => {
   const [imgErr, setImgErr] = useState(false);
 
+  console.log('=== MESSAGE DATA ===');
+  console.log(JSON.stringify(message).substring(0, 500));
+  console.log('====================');
+
   let msgText = '';
   if (message.message?.text) {
     msgText = message.message.text;
@@ -63,29 +63,50 @@ const MessageBubble = ({ message, isSent, userPicture, platform }) => {
   }
 
   let attachmentLabel = '';
+  let attachmentImage = null;
+
   if (!msgText) {
     const type = message.type;
-    const attachments = message.attachments || [];
+    const attachments = message.attachments || message.message?.attachments || [];
     const firstAtt = attachments[0];
+    const stickerId = message.message?.sticker_id || message.sticker_id;
+    const payload = firstAtt?.payload || firstAtt;
+    const payloadUrl = payload?.url || payload?.src || '';
 
-    if (type === 'story_mention' || firstAtt?.type === 'story_mention') {
+    if (stickerId) {
+      msgText = '👍';
+    } else if (type === 'story_mention' || firstAtt?.type === 'story_mention') {
       attachmentLabel = '📷 Story mention';
     } else if (type === 'story_reply' || firstAtt?.type === 'story_reply') {
       attachmentLabel = '📷 Story reply';
-    } else if (type === 'image' || firstAtt?.type === 'image' || type === 'photo') {
-      attachmentLabel = '📷 Photo';
-    } else if (type === 'video' || firstAtt?.type === 'video') {
+    } else if (type === 'image' || firstAtt?.type === 'image' || type === 'photo' || payload?.type === 'image') {
+      if (payloadUrl) {
+        attachmentImage = payloadUrl;
+      } else {
+        attachmentLabel = '📷 Photo';
+      }
+    } else if (type === 'video' || firstAtt?.type === 'video' || payload?.type === 'video') {
       attachmentLabel = '🎥 Video';
-    } else if (type === 'audio' || firstAtt?.type === 'audio') {
+    } else if (type === 'audio' || firstAtt?.type === 'audio' || payload?.type === 'audio') {
       attachmentLabel = '🎵 Audio';
     } else if (type === 'share' || firstAtt?.type === 'share') {
       attachmentLabel = '🔗 Shared post';
-    } else if (type === 'sticker' || firstAtt?.type === 'sticker') {
-      attachmentLabel = '🏷️ Sticker';
+    } else if (type === 'sticker' || firstAtt?.type === 'sticker' || payload?.type === 'sticker') {
+      if (payloadUrl) {
+        attachmentImage = payloadUrl;
+      } else {
+        msgText = '👍';
+      }
     } else if (type === 'reel' || firstAtt?.type === 'reel') {
       attachmentLabel = '🎬 Reel';
+    } else if (type === 'like' || message.message?.type === 'like') {
+      msgText = '👍';
     } else if (attachments.length > 0) {
-      attachmentLabel = '📎 Attachment';
+      if (payloadUrl && (payload?.type === 'image' || payloadUrl.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
+        attachmentImage = payloadUrl;
+      } else {
+        attachmentLabel = '📎 Attachment';
+      }
     } else if (message.story) {
       attachmentLabel = '📷 Story';
     }
@@ -121,22 +142,21 @@ const MessageBubble = ({ message, isSent, userPicture, platform }) => {
           className={`px-4 py-3 rounded-2xl ${isSent ? 'rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}
           style={isSent ? { backgroundColor: BRAND } : {}}
         >
-          {msgText ? (
-            <Text className={`text-sm leading-5 ${isSent ? 'text-white' : 'text-slate-800'}`}>
-              {msgText}
-            </Text>
-          ) : attachmentLabel ? (
-            <Text className={`text-sm ${isSent ? 'text-white' : 'text-slate-600'}`}>
-              {attachmentLabel}
-            </Text>
-          ) : (
-            <Text className={`text-sm italic ${isSent ? 'text-white/60' : 'text-slate-400'}`}>
-              [Attachment]
-            </Text>
+          {attachmentImage && (
+            <Image
+              source={{ uri: attachmentImage }}
+              style={{ width: 150, height: 150, borderRadius: 8, marginBottom: msgText || attachmentLabel ? 8 : 0 }}
+              resizeMode="contain"
+            />
           )}
-          <Text className={`text-[11px] mt-1 ${isSent ? 'text-white/60 text-right' : 'text-slate-400'}`}>
-            {time}
-          </Text>
+          {msgText ? (
+            <Text className={`text-sm leading-5 ${isSent ? 'text-white' : 'text-slate-800'}`}>{msgText}</Text>
+          ) : attachmentLabel ? (
+            <Text className={`text-sm ${isSent ? 'text-white' : 'text-slate-600'}`}>{attachmentLabel}</Text>
+          ) : !attachmentImage ? (
+            <Text className={`text-sm italic ${isSent ? 'text-white/60' : 'text-slate-400'}`}>[Media]</Text>
+          ) : null}
+          <Text className={`text-[11px] mt-1 ${isSent ? 'text-white/60 text-right' : 'text-slate-400'}`}>{time}</Text>
         </View>
       </View>
     </View>
@@ -200,6 +220,8 @@ const ChatScreen = () => {
   const userPicture = params?.userPicture || '';
   const pageId = params?.pageId || '';
   const platform = params?.platform || 'facebook';
+  const recipientId = params?.recipientId || '';
+
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -215,26 +237,36 @@ const ChatScreen = () => {
     setLoading(true);
     setError('');
 
-    console.log('========================================');
-    console.log('[Chat] Fetching messages');
-    console.log('[Chat] chatId:', chatId);
-    console.log('[Chat] platform:', platform);
-    console.log('[Chat] pageId:', pageId);
-    console.log('========================================');
-
     try {
       const result = await getChatMessages(chatId, platform);
 
-      console.log('[Chat] Result success:', result.success);
-      console.log('[Chat] Messages count:', result.messages?.length ?? 0);
-
       if (result.success) {
         const rawMessages = result.messages || [];
+        const sorted = rawMessages.sort((a, b) => {
+          const getTime = (msg) => {
+            if (msg.timestamp && typeof msg.timestamp === 'number') return msg.timestamp;
+            const dateStr = msg.sent_at || msg.created_at;
+            if (dateStr) return new Date(dateStr).getTime();
+            return 0;
+          };
+          return getTime(a) - getTime(b);
+        });
+        setMessages(sorted);
+      } else {
+        setError(result.message || 'Failed to load messages');
+      }
+    } catch (err) {
+      setError(err.message);
+    }
 
-        if (rawMessages.length > 0) {
-          console.log('[Chat] First message sample:', JSON.stringify(rawMessages[0]).substring(0, 300));
-        }
+    setLoading(false);
+  };
 
+  const fetchMessagesSilent = async () => {
+    try {
+      const result = await getChatMessages(chatId, platform);
+      if (result.success) {
+        const rawMessages = result.messages || [];
         const sorted = rawMessages.sort((a, b) => {
           const getTime = (msg) => {
             if (msg.timestamp && typeof msg.timestamp === 'number') return msg.timestamp;
@@ -245,17 +277,26 @@ const ChatScreen = () => {
           return getTime(a) - getTime(b);
         });
 
-        setMessages(sorted);
-      } else {
-        setError(result.message || 'Failed to load messages');
+        setMessages(prev => {
+          if (sorted.length !== prev.length) return sorted;
+          const lastNew = sorted[sorted.length - 1];
+          const lastOld = prev[prev.length - 1];
+          if (lastNew?._id !== lastOld?._id || lastNew?.mid !== lastOld?.mid) return sorted;
+          return prev;
+        });
       }
-    } catch (err) {
-      console.log('[Chat] Error:', err.message);
-      setError(err.message);
-    }
-
-    setLoading(false);
+    } catch (err) {}
   };
+
+  useEffect(() => {
+    if (!chatId || loading) return;
+
+    const interval = setInterval(() => {
+      fetchMessagesSilent();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [chatId, loading]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -266,13 +307,9 @@ const ChatScreen = () => {
   const isPageMessage = (msg) => {
     if (platform === 'instagram') {
       if (msg.is_echo === true) return true;
-
       if (msg.sender_id && msg.sender_id === pageId) return true;
-
       if (msg.sender?.id && msg.sender.id === pageId) return true;
-
       if (msg.recipient_id && msg.recipient_id !== pageId && !msg.sender_id) return true;
-
       return false;
     }
 
@@ -291,8 +328,8 @@ const ChatScreen = () => {
       _id: tempId,
       sender: { id: pageId, name: 'You' },
       sender_id: pageId,
-      recipient: { id: '' },
-      recipient_id: '',
+      recipient: { id: recipientId },
+      recipient_id: recipientId,
       message: { text },
       text: text,
       sent_at: new Date().toISOString(),
@@ -302,31 +339,31 @@ const ChatScreen = () => {
       _sending: true,
     };
 
-    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessages(prev => [...prev, optimisticMsg]);
     setInputMessage('');
     setSending(true);
 
     try {
-      const result = await sendChatMessage({ chatId, pageId, platform, text });
+      let result;
+
+      if (platform === 'facebook') {
+        result = await sendFacebookMessage({ pageId, recipientId, message: text });
+      } else {
+        result = await sendChatMessage({ chatId, pageId, platform, text });
+      }
 
       if (result.success) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === tempId ? { ...m, _sending: false, _sent: true } : m
-          )
+        setMessages(prev =>
+          prev.map(m => m._id === tempId ? { ...m, _sending: false, _sent: true } : m)
         );
       } else {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === tempId ? { ...m, _sending: false, _failed: true } : m
-          )
+        setMessages(prev =>
+          prev.map(m => m._id === tempId ? { ...m, _sending: false, _failed: true } : m)
         );
       }
     } catch (err) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === tempId ? { ...m, _sending: false, _failed: true } : m
-        )
+      setMessages(prev =>
+        prev.map(m => m._id === tempId ? { ...m, _sending: false, _failed: true } : m)
       );
     }
 
@@ -384,9 +421,7 @@ const ChatScreen = () => {
                   )}
                 </View>
                 <View className="flex-1">
-                  <Text className="text-base font-semibold text-slate-800" numberOfLines={1}>
-                    {userName}
-                  </Text>
+                  <Text className="text-base font-semibold text-slate-800" numberOfLines={1}>{userName}</Text>
                   <Text className="text-xs text-slate-400">
                     {platform === 'instagram' ? 'Instagram' : 'Facebook'} • {messages.length} message{messages.length !== 1 ? 's' : ''}
                   </Text>

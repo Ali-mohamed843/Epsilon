@@ -11,6 +11,7 @@ import { MoreVertical } from 'lucide-react-native';
 const getMenuItems = (platform) => {
   if (platform === 'instagram') {
     return [
+      { key: 'view_history', label: 'View History' },
       { key: 'user_comments', label: 'User Comments' },
       { key: 'view_post', label: 'View Post' },
       { key: 'comment_thread', label: 'Comment Thread' },
@@ -18,6 +19,7 @@ const getMenuItems = (platform) => {
   }
 
   return [
+    { key: 'view_history', label: 'View History' },
     { key: 'view_platform', label: 'View On Facebook' },
     { key: 'comment_thread', label: 'Comment Thread' },
     { key: 'user_comments', label: 'User Comments' },

@@ -60,6 +60,7 @@ const PageDetailsScreen = () => {
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [refreshing, setRefreshing] = useState(false);
   const [focusPostId, setFocusPostId] = useState(null);
+  const commentsTabRefreshRef = useRef(null);
 
   const postTabRefreshRef = useRef(null);
   const scrollRef = useRef(null);
@@ -67,14 +68,20 @@ const PageDetailsScreen = () => {
   const registerRefresh = useCallback((fn) => {
     postTabRefreshRef.current = fn;
   }, []);
+  const registerCommentsRefresh = useCallback((fn) => {
+  commentsTabRefreshRef.current = fn;
+}, []);
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    if (postTabRefreshRef.current) {
-      await postTabRefreshRef.current();
-    }
-    setRefreshing(false);
-  }, []);
+  setRefreshing(true);
+  if (activeTab === 'Posts' && postTabRefreshRef.current) {
+    await postTabRefreshRef.current();
+  }
+  if (activeTab === 'Comments' && commentsTabRefreshRef.current) {
+    await commentsTabRefreshRef.current();
+  }
+  setRefreshing(false);
+}, [activeTab]);
 
   const handleNavigateToPost = useCallback((postId) => {
     setFocusPostId(postId);
@@ -116,6 +123,7 @@ const PageDetailsScreen = () => {
             pageName={pageName}
             platform={platform}
             onNavigateToPost={handleNavigateToPost}
+            onRegisterRefresh={registerCommentsRefresh}
           />
         );
       case 'Messages':

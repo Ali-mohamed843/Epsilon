@@ -1100,23 +1100,77 @@ export const likeComment = async ({ pageId, commentId, platform = 'facebook', is
     if (!token) throw new Error('No auth token found. Please log in again.');
 
     const prefix = getPlatformCommentPrefix(platform);
+    const method = isLiked ? 'DELETE' : 'PUT';
     const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/like`;
 
+    console.log('========== LIKE API START ==========');
+    console.log('URL:', url);
+    console.log('Method:', method);
+    console.log('Platform:', platform);
+    console.log('Page ID:', pageId);
+    console.log('Comment ID:', commentId);
+    console.log('Comment ID type:', typeof commentId);
+    console.log('Comment ID length:', commentId?.length);
+    console.log('Currently Liked:', isLiked);
+    console.log('Action:', isLiked ? 'UNLIKE' : 'LIKE');
+    console.log('Token exists:', !!token);
+    console.log('Token first 20 chars:', token?.substring(0, 20));
+
+    const startTime = Date.now();
+
     const response = await fetch(url, {
-      method: isLiked ? 'DELETE' : 'PUT',
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
     });
 
-    const data = await response.json();
+    const endTime = Date.now();
+    console.log('Response time:', endTime - startTime, 'ms');
+    console.log('Response status:', response.status);
+    console.log('Response ok:', response.ok);
+    console.log('Response headers content-type:', response.headers.get('content-type'));
+
+    const responseText = await response.text();
+    console.log('Raw response length:', responseText.length);
+    console.log('Raw response:', responseText.substring(0, 500));
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.log('JSON parse ERROR:', e.message);
+      console.log('Full raw response:', responseText);
+      throw new Error('Invalid response from server');
+    }
+
+    console.log('Parsed status:', data.status);
+    console.log('Has comment obj:', !!data.comment);
+    console.log('Response is_liked:', data.comment?.is_liked);
+    console.log('Response is_liked type:', typeof data.comment?.is_liked);
+    console.log('Response page_actions count:', data.comment?.page_actions?.length);
+
+    if (data.comment?.page_actions?.length > 0) {
+      const lastAction = data.comment.page_actions[data.comment.page_actions.length - 1];
+      console.log('Last page_action:', JSON.stringify(lastAction));
+    }
+
+    console.log('Response message:', data.message);
+    console.log('Response error:', data.error);
+
     if (!response.ok || data.status !== 'success') {
+      console.log('========== LIKE API FAILED ==========');
+      console.log('Failure reason: status=' + response.status + ', data.status=' + data.status);
       throw new Error(data.message || 'Failed to update like');
     }
 
+    console.log('========== LIKE API SUCCESS ==========');
     return { success: true, comment: data.comment };
   } catch (error) {
+    console.log('========== LIKE API ERROR ==========');
+    console.log('Error message:', error.message);
+    console.log('Error stack:', error.stack?.substring(0, 200));
     return { success: false, message: error.message };
   }
 };
@@ -1403,6 +1457,103 @@ export const getSinglePost = async ({ postId, platform = 'facebook' }) => {
     }
 
     return { success: true, post: data.data ?? {} };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const unhideComment = async ({ pageId, commentId, platform = 'facebook' }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/unhide`;
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to unhide comment');
+    }
+
+    return { success: true, comment: data.comment };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const replyToComment = async ({ pageId, commentId, platform = 'facebook', message, responseType = 'reply', inquiryType = null, saveReply = false }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const prefix = getPlatformCommentPrefix(platform);
+    const url = `${BASE_URL}/${prefix}/${pageId}/${commentId}/reply`;
+
+    const body = {
+      message,
+      responseType,
+      saveReply,
+      inqueryType: inquiryType,
+    };
+
+    console.log('=== replyToComment ===');
+    console.log('URL:', url);
+    console.log('Body:', JSON.stringify(body));
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    console.log('Reply response status:', response.status);
+    console.log('Reply response:', JSON.stringify(data).substring(0, 300));
+
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to reply to comment');
+    }
+
+    return { success: true, update: data.update ?? false };
+  } catch (error) {
+    console.log('replyToComment ERROR:', error.message);
+    return { success: false, message: error.message };
+  }
+};
+
+export const sendFacebookMessage = async ({ pageId, recipientId, message }) => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (!token) throw new Error('No auth token found. Please log in again.');
+
+    const url = `${BASE_URL}/fb-messages/${pageId}/reply/${recipientId}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message, saveReply: false }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Failed to send message');
+    }
+
+    return { success: true, message: data.message };
   } catch (error) {
     return { success: false, message: error.message };
   }

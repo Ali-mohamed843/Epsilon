@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { X, ChevronDown, Send } from 'lucide-react-native';
-import { getInquiryTypes, getSavedReplies } from '@/Api/api';
+import { getInquiryTypes, getSavedReplies, replyToComment } from '@/Api/api';
 
 const BRAND = '#6e226e';
 
@@ -79,7 +79,7 @@ const Dropdown = ({ label, value, options, onSelect, placeholder }) => {
   );
 };
 
-const ReplyModal = ({ visible, onClose, comment, pageId, platform = 'instagram' }) => {
+const ReplyModal = ({ visible, onClose, comment, pageId, platform = 'facebook' }) => {
   const [replyText, setReplyText] = useState('');
   const [replyType, setReplyType] = useState('reply');
   const [inquiryType, setInquiryType] = useState(null);
@@ -134,19 +134,24 @@ const ReplyModal = ({ visible, onClose, comment, pageId, platform = 'instagram' 
 
     setSubmitting(true);
 
-    console.log('=== Reply Submit ===');
-    console.log('Comment ID:', comment?.comment_id);
-    console.log('Reply Type:', replyType);
-    console.log('Reply Text:', replyText);
-    console.log('Inquiry Type:', inquiryType);
-    console.log('Platform:', platform);
-    console.log('Page ID:', pageId);
+    const result = await replyToComment({
+      pageId,
+      commentId: comment?.comment_id,
+      platform,
+      message: replyText.trim(),
+      responseType: replyType,
+      inquiryType,
+      saveReply: false,
+    });
 
-    setTimeout(() => {
-      setSubmitting(false);
-      Alert.alert('Reply', 'Reply API will be connected.');
-      onClose();
-    }, 500);
+    setSubmitting(false);
+
+    if (result.success) {
+      Alert.alert('Success', 'Reply sent successfully.');
+      onClose(true);
+    } else {
+      Alert.alert('Reply Failed', result.message);
+    }
   };
 
   const inquiryOptions = inquiryTypes.map(t => ({ key: t._id, label: t.name }));
@@ -160,7 +165,7 @@ const ReplyModal = ({ visible, onClose, comment, pageId, platform = 'instagram' 
       >
         <View
           className="bg-white rounded-2xl w-[92%]"
-          style={{ maxHeight: '85%' }}
+          style={{ maxHeight: '85%', overflow: 'hidden' }}
         >
           <View className="flex-row items-center justify-between px-4 pt-4 pb-2">
             <View>
@@ -168,7 +173,7 @@ const ReplyModal = ({ visible, onClose, comment, pageId, platform = 'instagram' 
               <Text className="text-xs text-slate-500">{comment?.from?.name ?? 'Unknown'}</Text>
             </View>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={() => onClose(false)}
               className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
             >
               <X size={18} color="#64748B" />

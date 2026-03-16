@@ -9,8 +9,8 @@ import {
   Image,
   Linking,
 } from 'react-native';
-import { Search, UserPlus, ThumbsUp, EyeOff, Eye, Trash2, CheckCircle, MessageCircle } from 'lucide-react-native';
-import { getPageComments, deleteComment, hideComment, likeComment, markCommentDone, blockUser } from '@/Api/api';
+import { Search, UserPlus, ThumbsUp, EyeOff, Eye, Trash2, CheckCheck, MessageCircle, Send } from 'lucide-react-native';
+import { getPageComments, deleteComment, hideComment, unhideComment, likeComment, markCommentDone, blockUser } from '@/Api/api';
 import FilterButton from '@/components/comments/FilterButton';
 import IconButton from '@/components/comments/IconButton';
 import AssignModal from '@/components/comments/AssignModal';
@@ -23,20 +23,51 @@ import HistoryModal from '@/components/comments/HistoryModal';
 const BRAND = '#6e226e';
 const PER_PAGE = 30;
 
-const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onReply, onHide, onDelete, onDone, onMenuSelect, isDeleting, isHiding, isLiking, isDoning }) => {
+const getPostIdFromComment = (comment, platform) => {
+  if (platform === 'instagram') {
+    return comment.media?.id ?? comment.post_id ?? null;
+  }
+  return comment.post_id ?? null;
+};
+
+const CommentCard = ({ comment, platform, onAssign, onLike, onReply, onHide, onDelete, onDone, onMenuSelect, isDeleting, isHiding, isLiking, isDoning, isBlocked }) => {
   const avatarUrl = comment.from?.picture;
   const name = comment.from?.name ?? 'Unknown';
   const time = comment.created_time ? new Date(comment.created_time).toLocaleString() : '';
-  const isHidden = comment.is_hided === true;
+  const isHidden = comment.is_hided === true || comment.hidden === true;
   const isLiked = comment.is_liked === true;
   const isAssigned = !!comment.assigned_to;
   const isDone = comment.is_done === true;
-  const isBusy = isDeleting || isHiding || isLiking || isDoning;
+  const isBusy = isDeleting || isHiding || isLiking || isDoning || isBlocked;
   const isFacebook = platform === 'facebook';
 
   return (
-    <View className="bg-white rounded-xl p-4 mb-3 border border-slate-200">
-      {isBusy && (
+    <View
+      className="bg-white rounded-xl p-4 mb-3 border border-slate-200"
+      style={isBlocked ? { opacity: 0.5 } : {}}
+    >
+      {isBlocked && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 10,
+            borderRadius: 12,
+            backgroundColor: 'rgba(255,255,255,0.4)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <View className="px-3 py-1.5 rounded-lg bg-red-100">
+            <Text className="text-xs text-red-700 font-semibold">User Blocked</Text>
+          </View>
+        </View>
+      )}
+
+      {isBusy && !isBlocked && (
         <View
           style={{
             position: 'absolute',
@@ -78,6 +109,11 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
         <View className="flex-1">
           <View className="flex-row items-center flex-wrap">
             <Text className="text-sm font-semibold text-slate-800 mb-0.5">{name}</Text>
+            {isBlocked && (
+              <View className="ml-2 px-2 py-0.5 rounded bg-red-100">
+                <Text className="text-xs text-red-700 font-medium">Blocked</Text>
+              </View>
+            )}
             {isDone && (
               <View className="ml-2 px-2 py-0.5 rounded bg-green-100">
                 <Text className="text-xs text-green-700 font-medium">Done</Text>
@@ -114,28 +150,30 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
       )}
 
       <View className="flex-row items-center justify-between">
-        <View className="flex-row gap-2">
-          <TouchableOpacity
-            onPress={onViewHistory}
-            activeOpacity={0.7}
-            disabled={isBusy}
-            className="px-4 py-2 rounded-lg"
-            style={{ backgroundColor: BRAND }}
-          >
-            <Text className="text-sm font-medium text-white">View History</Text>
-          </TouchableOpacity>
-
-          {isAssigned && !isDone && (
-            <TouchableOpacity
-              onPress={onDone}
-              activeOpacity={0.7}
-              disabled={isBusy}
-              className="flex-row items-center px-4 py-2 rounded-lg"
-              style={{ backgroundColor: '#22C55E' }}
-            >
-              <CheckCircle size={16} color="#fff" />
-              <Text className="text-sm font-medium text-white ml-1">Done</Text>
-            </TouchableOpacity>
+        <View className="flex-row gap-1.5">
+          {isAssigned && (
+            <>
+              {isFacebook && !comment.pageHasReplied && (
+                <IconButton
+                  icon={Send}
+                  color="#ffffff"
+                  bgColor=""
+                  style={{ backgroundColor: '#3B82F6' }}
+                  onPress={onReply}
+                  disabled={isBusy}
+                />
+              )}
+              {!isDone && (
+                <IconButton
+                  icon={CheckCheck}
+                  color="#ffffff"
+                  bgColor=""
+                  style={{ backgroundColor: '#22C55E' }}
+                  onPress={onDone}
+                  disabled={isBusy}
+                />
+              )}
+            </>
           )}
         </View>
 
@@ -147,8 +185,6 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
             style={isAssigned ? { backgroundColor: '#3B82F6' } : {}}
             onPress={onAssign}
             disabled={isBusy}
-            size={14}
-            buttonSize={7}
           />
           {isFacebook ? (
             <IconButton
@@ -158,8 +194,6 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
               style={isLiked ? { backgroundColor: BRAND } : {}}
               onPress={onLike}
               disabled={isBusy}
-              size={14}
-              buttonSize={7}
             />
           ) : (
             <IconButton
@@ -168,8 +202,6 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
               bgColor="bg-purple-100"
               onPress={onReply}
               disabled={isBusy}
-              size={14}
-              buttonSize={7}
             />
           )}
           <IconButton
@@ -178,8 +210,6 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
             bgColor={isHidden ? 'bg-amber-100' : 'bg-slate-100'}
             onPress={onHide}
             disabled={isBusy}
-            size={14}
-            buttonSize={7}
           />
           <IconButton
             icon={Trash2}
@@ -187,8 +217,6 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
             bgColor="bg-red-100"
             onPress={onDelete}
             disabled={isBusy}
-            size={14}
-            buttonSize={7}
           />
         </View>
       </View>
@@ -196,7 +224,7 @@ const CommentCard = ({ comment, platform, onViewHistory, onAssign, onLike, onRep
   );
 };
 
-const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost }) => {
+const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost, onRegisterRefresh }) => {
   const [sort, setSort] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
@@ -214,8 +242,10 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   const [replyModal, setReplyModal] = useState({ visible: false, comment: null });
   const [userSheet, setUserSheet] = useState({ visible: false, userId: null, userName: null, userPicture: null });
   const [threadSheet, setThreadSheet] = useState({ visible: false, commentId: null });
-  const isFetching = useRef(false);
   const [historyModal, setHistoryModal] = useState({ visible: false, comment: null });
+  const [blockedUserIds, setBlockedUserIds] = useState(new Set());
+  const isFetching = useRef(false);
+  const skipSocketUpdateRef = useRef(new Set());
 
   const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
     if (isFetching.current) return;
@@ -242,6 +272,12 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
     setHasMore(true);
     fetchComments({ pageNum: 1, reset: true });
   }, [pageId, platform, searchQuery, sort]);
+
+  useEffect(() => {
+    if (onRegisterRefresh) {
+      onRegisterRefresh(() => fetchComments({ pageNum: 1, reset: true }));
+    }
+  }, [onRegisterRefresh, fetchComments]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQuery(searchInput), 500);
@@ -275,21 +311,45 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   }, [pageId, platform]);
 
   const handleHide = useCallback((comment) => {
-    const isHidden = comment.is_hided === true;
+    const isHidden = comment.is_hided === true || comment.hidden === true;
     const action = isHidden ? 'Unhide' : 'Hide';
     Alert.alert(`${action} Comment`, `${action} this comment?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: action, onPress: async () => {
           addBusyId(setHidingIds, comment._id);
-          const result = await hideComment({ pageId, commentId: comment.comment_id, platform });
+          skipSocketUpdateRef.current.add(comment._id);
+
+          let result;
+          if (isHidden && platform === 'facebook') {
+            result = await unhideComment({ pageId, commentId: comment.comment_id, platform });
+          } else {
+            result = await hideComment({ pageId, commentId: comment.comment_id, platform });
+          }
+
           if (result.success) {
+            const newHidden = !isHidden;
             setComments(prev => prev.map(c =>
-              c._id === comment._id ? { ...c, is_hided: result.comment?.is_hided ?? !isHidden } : c
+              c._id === comment._id
+                ? {
+                    ...c,
+                    is_hided: newHidden,
+                    hidden: newHidden,
+                    page_actions: result.comment?.page_actions ?? c.page_actions,
+                  }
+                : c
             ));
           } else {
-            Alert.alert(`${action} Failed`, result.message);
+            const errorMsg = result.message?.includes('spam')
+              ? 'This comment is marked as spam by Facebook and cannot be unhidden.'
+              : result.message || `Failed to ${action.toLowerCase()} comment`;
+            Alert.alert(`${action} Failed`, errorMsg);
           }
+
+          setTimeout(() => {
+            skipSocketUpdateRef.current.delete(comment._id);
+          }, 3000);
+
           removeBusyId(setHidingIds, comment._id);
         }
       }
@@ -298,30 +358,47 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
 
   const handleLike = useCallback((comment) => {
     if (platform !== 'facebook') return;
+    if (comment.is_hided === true) {
+      Alert.alert('Cannot Like', 'You cannot like a hidden comment. Unhide it first.');
+      return;
+    }
     const isLiked = comment.is_liked === true;
-    addBusyId(setLikingIds, comment._id);
-    (async () => {
-      const result = await likeComment({ pageId, commentId: comment.comment_id, platform, isLiked });
-      if (result.success) {
-        setComments(prev => prev.map(c =>
-          c._id === comment._id
-            ? { ...c, is_liked: result.comment.is_liked ?? !isLiked, page_actions: result.comment.page_actions }
-            : c
-        ));
-      } else {
-        Alert.alert(`${isLiked ? 'Unlike' : 'Like'} Failed`, result.message);
+    const action = isLiked ? 'Unlike' : 'Like';
+    Alert.alert(`${action} Comment`, `${action} this comment?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: action, onPress: async () => {
+          addBusyId(setLikingIds, comment._id);
+          const result = await likeComment({ pageId, commentId: comment.comment_id, platform, isLiked });
+          if (result.success) {
+            setComments(prev => prev.map(c =>
+              c._id === comment._id
+                ? { ...c, is_liked: result.comment.is_liked ?? !isLiked, page_actions: result.comment.page_actions ?? c.page_actions }
+                : c
+            ));
+          } else {
+            Alert.alert(`${action} Failed`, result.message);
+          }
+          removeBusyId(setLikingIds, comment._id);
+        }
       }
-      removeBusyId(setLikingIds, comment._id);
-    })();
+    ]);
   }, [pageId, platform]);
 
   const handleReply = useCallback((comment) => {
     setReplyModal({ visible: true, comment });
   }, []);
 
-  const handleReplyClose = useCallback(() => {
+  const handleReplyClose = useCallback((success) => {
+    if (success && replyModal.comment) {
+      setComments(prev => prev.map(c =>
+        c._id === replyModal.comment._id
+          ? { ...c, pageHasReplied: true }
+          : c
+      ));
+    }
     setReplyModal({ visible: false, comment: null });
-  }, []);
+  }, [replyModal.comment]);
 
   const handleDone = useCallback((comment) => {
     Alert.alert('Mark as Done', 'Mark this comment as done?', [
@@ -366,6 +443,7 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
         text: 'Block', style: 'destructive', onPress: async () => {
           const result = await blockUser({ pageId, userId: comment.from?.id, platform });
           if (result.success) {
+            setBlockedUserIds(prev => new Set([...prev, comment.from?.id]));
             Alert.alert('Blocked', `${userName} has been blocked.`);
           } else {
             Alert.alert('Block Failed', result.message);
@@ -375,52 +453,49 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
     ]);
   }, [pageId, platform]);
 
-  const getPostIdFromComment = (comment, platform) => {
-  if (platform === 'instagram') {
-    return comment.media?.id ?? comment.post_id ?? null;
-  }
-  return comment.post_id ?? null;
-};
-
-const handleMenuSelect = useCallback((comment, key) => {
-  switch (key) {
-    case 'view_platform': {
-      const url = comment.post?.permalink_url;
-      if (url) Linking.openURL(url);
-      else Alert.alert('Error', 'No link available');
-      break;
-    }
-    case 'view_post': {
-      const postId = getPostIdFromComment(comment, platform);
-      if (postId && onNavigateToPost) {
-        onNavigateToPost(postId);
-      } else {
-        Alert.alert('Error', 'Cannot navigate to post');
+  const handleMenuSelect = useCallback((comment, key) => {
+    switch (key) {
+      case 'view_history': {
+        setHistoryModal({ visible: true, comment });
+        break;
       }
-      break;
+      case 'view_platform': {
+        const url = comment.post?.permalink_url;
+        if (url) Linking.openURL(url);
+        else Alert.alert('Error', 'No link available');
+        break;
+      }
+      case 'view_post': {
+        const postId = getPostIdFromComment(comment, platform);
+        if (postId && onNavigateToPost) {
+          onNavigateToPost(postId);
+        } else {
+          Alert.alert('Error', 'Cannot navigate to post');
+        }
+        break;
+      }
+      case 'user_comments': {
+        setUserSheet({
+          visible: true,
+          userId: comment.from?.id,
+          userName: comment.from?.name,
+          userPicture: comment.from?.picture,
+        });
+        break;
+      }
+      case 'comment_thread': {
+        setThreadSheet({
+          visible: true,
+          commentId: comment.comment_id,
+        });
+        break;
+      }
+      case 'block': {
+        handleBlock(comment);
+        break;
+      }
     }
-    case 'user_comments': {
-      setUserSheet({
-        visible: true,
-        userId: comment.from?.id,
-        userName: comment.from?.name,
-        userPicture: comment.from?.picture,
-      });
-      break;
-    }
-    case 'comment_thread': {
-      setThreadSheet({
-        visible: true,
-        commentId: comment.comment_id,
-      });
-      break;
-    }
-    case 'block': {
-      handleBlock(comment);
-      break;
-    }
-  }
-}, [handleBlock, platform, onNavigateToPost]);
+  }, [handleBlock, platform, onNavigateToPost]);
 
   const filteredComments = comments.filter(c => {
     if (statusFilter === 'replied') return c.pageHasReplied === true;
@@ -471,7 +546,7 @@ const handleMenuSelect = useCallback((comment, key) => {
           isHiding={hidingIds.has(item._id)}
           isLiking={likingIds.has(item._id)}
           isDoning={doningIds.has(item._id)}
-          onViewHistory={() => setHistoryModal({ visible: true, comment: item })}
+          isBlocked={blockedUserIds.has(item.from?.id)}
           onAssign={() => handleAssign(item)}
           onLike={() => handleLike(item)}
           onReply={() => handleReply(item)}

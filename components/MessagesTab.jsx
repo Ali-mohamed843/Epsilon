@@ -7,9 +7,11 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Search, MoreHorizontal } from 'lucide-react-native';
+import { Search } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { getPageChats } from '@/Api/api';
+import useSocketEvent from '@/hooks/useSocketEvent';
+import { SOCKET_EVENTS } from '@/contexts/SocketContext';
 
 const BRAND = '#6e226e';
 
@@ -82,9 +84,6 @@ const getChatLastMessageTime = (chat, platform) => {
 };
 
 const getChatIsDone = (chat, platform) => {
-  if (platform === 'instagram') {
-    return chat.is_done ?? false;
-  }
   return chat.is_done ?? false;
 };
 
@@ -93,6 +92,13 @@ const getChatSeenByAgent = (chat, platform) => {
     return chat.seenByAgent ?? true;
   }
   return chat.seenByAgent ?? false;
+};
+
+const getChatRecipientId = (chat, platform) => {
+  if (platform === 'instagram') {
+    return chat.user?.id || chat.ig_user_id || '';
+  }
+  return chat.messenger_user_id?.psid || chat.messenger_user_id?._id || chat.psid || '';
 };
 
 const FilterTab = ({ title, isActive, onPress }) => (
@@ -107,7 +113,6 @@ const FilterTab = ({ title, isActive, onPress }) => (
     </Text>
   </TouchableOpacity>
 );
-
 
 const MessageCard = ({ chat, onPress, platform }) => {
   const [imgErr, setImgErr] = useState(false);
@@ -178,19 +183,16 @@ const MessageCard = ({ chat, onPress, platform }) => {
   );
 };
 
-
-const MessagesTab = ({ pageId, pageName, platform = 'facebook' }) => {
+const MessagesTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh }) => {
   const [repliedFilter, setRepliedFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-
   const [chats, setChats] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-
   const isFetching = useRef(false);
 
   const fetchChats = useCallback(async (page = 1, reset = false) => {
@@ -229,9 +231,26 @@ const MessagesTab = ({ pageId, pageName, platform = 'facebook' }) => {
   }, [pageId, platform]);
 
   useEffect(() => {
+    if (onRegisterRefresh) {
+      onRegisterRefresh(() => fetchChats(1, true));
+    }
+  }, [onRegisterRefresh, fetchChats]);
+
+  useEffect(() => {
     const t = setTimeout(() => setSearchQuery(searchInput), 400);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  useSocketEvent(SOCKET_EVENTS.NEW_MESSAGE, (data) => {
+  if (!data) return;
+  fetchChats(1, true);
+}, [pageId]);
+
+useSocketEvent(SOCKET_EVENTS.IG_NEW_MESSAGE, (data) => {
+  if (!data) return;
+  if (platform !== 'instagram') return;
+  fetchChats(1, true);
+}, [pageId, platform]);
 
   const filteredChats = chats.filter((chat) => {
     const isDone = getChatIsDone(chat, platform);
@@ -255,22 +274,23 @@ const MessagesTab = ({ pageId, pageName, platform = 'facebook' }) => {
     }
   };
 
- const handleChatPress = (chat) => {
-  const chatPageId = platform === 'instagram'
-    ? (chat.page_id || pageId)
-    : pageId;
+  const handleChatPress = (chat) => {
+    const chatPageId = platform === 'instagram'
+      ? (chat.page_id || pageId)
+      : pageId;
 
-  router.push({
-    pathname: '/pages/message',
-    params: {
-      chatId: chat._id,
-      userName: getChatUserName(chat, platform),
-      userPicture: getChatUserPicture(chat, platform) || '',
-      pageId: chatPageId,
-      platform: platform,
-    },
-  });
-};
+    router.push({
+      pathname: '/pages/message',
+      params: {
+        chatId: chat._id,
+        userName: getChatUserName(chat, platform),
+        userPicture: getChatUserPicture(chat, platform) || '',
+        pageId: chatPageId,
+        platform: platform,
+        recipientId: getChatRecipientId(chat, platform),
+      },
+    });
+  };
 
   if (loading) {
     return (
