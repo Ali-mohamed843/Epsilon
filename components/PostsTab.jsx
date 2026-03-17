@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, Image,
-  ActivityIndicator, Linking, Alert,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { Plus, ThumbsUp, MessageCircle, Share2, Eye, Play, Pencil, Trash2, ArrowLeft } from 'lucide-react-native';
 import { getPagePosts, deleteFacebookPost, getSinglePost } from '@/Api/api';
 import CreatePostModal from '@/components/posts/CreatePostModal';
 import EditPostModal from '@/components/posts/EditPostModal';
 import CreateIgPostModal from '@/components/instagram/CreateIgPostModal';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import StatusToast from '@/components/ui/StatusToast';
 import useSocketEvent from '@/hooks/useSocketEvent';
 import { SOCKET_EVENTS } from '@/contexts/SocketContext';
 
@@ -58,17 +60,6 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete, isDeleting }) =>
     if (post.permalink) Linking.openURL(post.permalink).catch(() => {});
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Post',
-      'Are you sure you want to delete this post?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDelete(post) },
-      ]
-    );
-  };
-
   return (
     <View className="bg-white rounded-xl p-4 mb-4 border border-slate-200">
       {isDeleting && (
@@ -114,7 +105,7 @@ const PostCard = ({ post, pageName, platform, onEdit, onDelete, isDeleting }) =>
             </TouchableOpacity>
           )}
           {isFacebook && (
-            <TouchableOpacity onPress={handleDelete} activeOpacity={0.7} disabled={isDeleting} className="p-2 mr-1">
+            <TouchableOpacity onPress={() => onDelete(post)} activeOpacity={0.7} disabled={isDeleting} className="p-2 mr-1">
               <Trash2 size={16} color="#ef4444" />
             </TouchableOpacity>
           )}
@@ -200,10 +191,15 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
   const [focusLoading, setFocusLoading] = useState(false);
   const [focusError, setFocusError] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
+  const [deleteModal, setDeleteModal] = useState({ visible: false, post: null });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [toast, setToast] = useState({ visible: false, type: 'success', message: '' });
 
   const perPage = 20;
   const isInstagram = platform === 'instagram';
   const isFocused = !!focusPostId;
+
+  const showToast = (type, message) => setToast({ visible: true, type, message });
 
   const fetchPosts = useCallback(async (page) => {
     if (page === 1) { setLoading(true); setError(''); }
@@ -284,16 +280,29 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
     setPosts(prev => prev.filter(p => p._id !== data._id && p.post_id !== data.post_id));
   }, [pageId]);
 
-  const handleDelete = async (post) => {
+  const handleDeletePress = (post) => {
+    setDeleteModal({ visible: true, post });
+  };
+
+  const handleConfirmDelete = async () => {
+    const post = deleteModal.post;
+    if (!post) return;
+    setDeleteLoading(true);
     setDeletingPostId(post.post_id);
+
     const result = await deleteFacebookPost({ pageId, postId: post.post_id });
+
     if (result.success) {
       setPosts((prev) => prev.filter((p) => p.post_id !== post.post_id));
       if (isFocused) onClearFocus?.();
+      showToast('success', 'Post deleted');
     } else {
-      Alert.alert('Error', result.message || 'Failed to delete post');
+      showToast('error', result.message || 'Failed to delete post');
     }
+
+    setDeleteLoading(false);
     setDeletingPostId(null);
+    setDeleteModal({ visible: false, post: null });
   };
 
   if (!isFocused && loading) {
@@ -319,6 +328,13 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
 
   return (
     <View className="flex-1">
+      <StatusToast
+        visible={toast.visible}
+        type={toast.type}
+        message={toast.message}
+        onHide={() => setToast({ visible: false, type: 'success', message: '' })}
+      />
+
       {isInstagram ? (
         <CreateIgPostModal
           visible={showCreateModal}
@@ -341,6 +357,17 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
         pageId={pageId}
         post={editingPost}
         onPostUpdated={() => { setEditingPost(null); fetchPosts(1); }}
+      />
+
+      <ConfirmModal
+        visible={deleteModal.visible}
+        onClose={() => setDeleteModal({ visible: false, post: null })}
+        onConfirm={handleConfirmDelete}
+        title="Delete Post"
+        message="Are you sure you want to delete this post? This action cannot be undone."
+        confirmText="Delete"
+        type="delete"
+        loading={deleteLoading}
       />
 
       {isFocused ? (
@@ -382,7 +409,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
               pageName={pageName}
               platform={platform}
               onEdit={setEditingPost}
-              onDelete={handleDelete}
+              onDelete={handleDeletePress}
               isDeleting={deletingPostId === focusedPost.post_id}
             />
           )}
@@ -406,7 +433,7 @@ const PostsTab = ({ pageId, pageName, platform = 'facebook', onRegisterRefresh, 
               pageName={pageName}
               platform={platform}
               onEdit={setEditingPost}
-              onDelete={handleDelete}
+              onDelete={handleDeletePress}
               isDeleting={deletingPostId === post.post_id}
             />
           ))}

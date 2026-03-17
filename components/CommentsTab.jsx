@@ -19,6 +19,8 @@ import ReplyModal from '@/components/comments/ReplyModal';
 import UserCommentsSheet from '@/components/comments/UserCommentsSheet';
 import CommentThreadSheet from '@/components/comments/CommentThreadSheet';
 import HistoryModal from '@/components/comments/HistoryModal';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import StatusToast from '@/components/ui/StatusToast';
 
 const BRAND = '#6e226e';
 const PER_PAGE = 30;
@@ -246,6 +248,14 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   const [blockedUserIds, setBlockedUserIds] = useState(new Set());
   const isFetching = useRef(false);
   const skipSocketUpdateRef = useRef(new Set());
+  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', type: 'confirm', onConfirm: null });
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [toast, setToast] = useState({ visible: false, type: 'success', message: '' });
+  const showToast = (type, message) => setToast({ visible: true, type, message });
+
+  const showConfirm = ({ title, message, type = 'confirm', onConfirm }) => {
+    setConfirmModal({ visible: true, title, message, type, onConfirm });
+  };
 
   const fetchComments = useCallback(async ({ pageNum = 1, reset = false } = {}) => {
     if (isFetching.current) return;
@@ -294,96 +304,100 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
 
   const handleDelete = useCallback((comment) => {
     const preview = comment.message?.length > 50 ? comment.message.substring(0, 50) + '...' : comment.message ?? '';
-    Alert.alert('Delete Comment', `Delete "${preview}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          addBusyId(setDeletingIds, comment._id);
-          const result = await deleteComment({ pageId, commentId: comment.comment_id, platform });
-          if (result.success) {
-            setComments(prev => prev.filter(c => c._id !== comment._id));
-          } else {
-            Alert.alert('Delete Failed', result.message);
-          }
-          removeBusyId(setDeletingIds, comment._id);
+    showConfirm({
+      title: 'Delete Comment',
+      message: `Delete "${preview}"?`,
+      type: 'delete',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        addBusyId(setDeletingIds, comment._id);
+        const result = await deleteComment({ pageId, commentId: comment.comment_id, platform });
+        if (result.success) {
+          setComments(prev => prev.filter(c => c._id !== comment._id));
+          showToast('success', 'Comment deleted');
+        } else {
+          showToast('error', result.message || 'Failed to delete');
         }
-      }
-    ]);
+        removeBusyId(setDeletingIds, comment._id);
+        setConfirmLoading(false);
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+      },
+    });
   }, [pageId, platform]);
 
   const handleHide = useCallback((comment) => {
     const isHidden = comment.is_hided === true || comment.hidden === true;
     const action = isHidden ? 'Unhide' : 'Hide';
-    Alert.alert(`${action} Comment`, `${action} this comment?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: action, onPress: async () => {
-          addBusyId(setHidingIds, comment._id);
-          skipSocketUpdateRef.current.add(comment._id);
+    showConfirm({
+      title: `${action} Comment`,
+      message: `${action} this comment?`,
+      type: 'warning',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        addBusyId(setHidingIds, comment._id);
+        skipSocketUpdateRef.current.add(comment._id);
 
-          let result;
-          if (isHidden && platform === 'facebook') {
-            result = await unhideComment({ pageId, commentId: comment.comment_id, platform });
-          } else {
-            result = await hideComment({ pageId, commentId: comment.comment_id, platform });
-          }
-
-          if (result.success) {
-            const newHidden = !isHidden;
-            setComments(prev => prev.map(c =>
-              c._id === comment._id
-                ? {
-                    ...c,
-                    is_hided: newHidden,
-                    hidden: newHidden,
-                    page_actions: result.comment?.page_actions ?? c.page_actions,
-                  }
-                : c
-            ));
-          } else {
-            const errorMsg = result.message?.includes('spam')
-              ? 'This comment is marked as spam by Facebook and cannot be unhidden.'
-              : result.message || `Failed to ${action.toLowerCase()} comment`;
-            Alert.alert(`${action} Failed`, errorMsg);
-          }
-
-          setTimeout(() => {
-            skipSocketUpdateRef.current.delete(comment._id);
-          }, 3000);
-
-          removeBusyId(setHidingIds, comment._id);
+        let result;
+        if (isHidden && platform === 'facebook') {
+          result = await unhideComment({ pageId, commentId: comment.comment_id, platform });
+        } else {
+          result = await hideComment({ pageId, commentId: comment.comment_id, platform });
         }
-      }
-    ]);
+
+        if (result.success) {
+          const newHidden = !isHidden;
+          setComments(prev => prev.map(c =>
+            c._id === comment._id
+              ? { ...c, is_hided: newHidden, hidden: newHidden, page_actions: result.comment?.page_actions ?? c.page_actions }
+              : c
+          ));
+          showToast('success', `Comment ${action.toLowerCase()}d`);
+        } else {
+          const errorMsg = result.message?.includes('spam')
+            ? 'This comment is marked as spam and cannot be unhidden.'
+            : result.message || `Failed to ${action.toLowerCase()}`;
+          showToast('error', errorMsg);
+        }
+
+        setTimeout(() => { skipSocketUpdateRef.current.delete(comment._id); }, 3000);
+        removeBusyId(setHidingIds, comment._id);
+        setConfirmLoading(false);
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+      },
+    });
   }, [pageId, platform]);
 
   const handleLike = useCallback((comment) => {
     if (platform !== 'facebook') return;
     if (comment.is_hided === true) {
-      Alert.alert('Cannot Like', 'You cannot like a hidden comment. Unhide it first.');
+      showToast('error', 'Cannot like a hidden comment. Unhide it first.');
       return;
     }
     const isLiked = comment.is_liked === true;
     const action = isLiked ? 'Unlike' : 'Like';
-    Alert.alert(`${action} Comment`, `${action} this comment?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: action, onPress: async () => {
-          addBusyId(setLikingIds, comment._id);
-          const result = await likeComment({ pageId, commentId: comment.comment_id, platform, isLiked });
-          if (result.success) {
-            setComments(prev => prev.map(c =>
-              c._id === comment._id
-                ? { ...c, is_liked: result.comment.is_liked ?? !isLiked, page_actions: result.comment.page_actions ?? c.page_actions }
-                : c
-            ));
-          } else {
-            Alert.alert(`${action} Failed`, result.message);
-          }
-          removeBusyId(setLikingIds, comment._id);
+    showConfirm({
+      title: `${action} Comment`,
+      message: `${action} this comment?`,
+      type: 'confirm',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        addBusyId(setLikingIds, comment._id);
+        const result = await likeComment({ pageId, commentId: comment.comment_id, platform, isLiked });
+        if (result.success) {
+          setComments(prev => prev.map(c =>
+            c._id === comment._id
+              ? { ...c, is_liked: result.comment.is_liked ?? !isLiked, page_actions: result.comment.page_actions ?? c.page_actions }
+              : c
+          ));
+          showToast('success', `Comment ${action.toLowerCase()}d`);
+        } else {
+          showToast('error', result.message || `Failed to ${action.toLowerCase()}`);
         }
-      }
-    ]);
+        removeBusyId(setLikingIds, comment._id);
+        setConfirmLoading(false);
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+      },
+    });
   }, [pageId, platform]);
 
   const handleReply = useCallback((comment) => {
@@ -391,34 +405,39 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   }, []);
 
   const handleReplyClose = useCallback((success) => {
-    if (success && replyModal.comment) {
-      setComments(prev => prev.map(c =>
-        c._id === replyModal.comment._id
-          ? { ...c, pageHasReplied: true }
-          : c
-      ));
-    }
-    setReplyModal({ visible: false, comment: null });
-  }, [replyModal.comment]);
+  if (success && replyModal.comment) {
+    setComments(prev => prev.map(c =>
+      c._id === replyModal.comment._id
+        ? { ...c, pageHasReplied: true }
+        : c
+    ));
+    showToast('success', 'Reply sent');
+  }
+  setReplyModal({ visible: false, comment: null });
+}, [replyModal.comment]);
 
   const handleDone = useCallback((comment) => {
-    Alert.alert('Mark as Done', 'Mark this comment as done?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Done', onPress: async () => {
-          addBusyId(setDoningIds, comment._id);
-          const result = await markCommentDone({ pageId, commentId: comment.comment_id, platform });
-          if (result.success) {
-            setComments(prev => prev.map(c =>
-              c._id === comment._id ? { ...c, is_done: true } : c
-            ));
-          } else {
-            Alert.alert('Failed', result.message);
-          }
-          removeBusyId(setDoningIds, comment._id);
+    showConfirm({
+      title: 'Mark as Done',
+      message: 'Mark this comment as done?',
+      type: 'confirm',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        addBusyId(setDoningIds, comment._id);
+        const result = await markCommentDone({ pageId, commentId: comment.comment_id, platform });
+        if (result.success) {
+          setComments(prev => prev.map(c =>
+            c._id === comment._id ? { ...c, is_done: true } : c
+          ));
+          showToast('success', 'Marked as done');
+        } else {
+          showToast('error', result.message || 'Failed to mark as done');
         }
-      }
-    ]);
+        removeBusyId(setDoningIds, comment._id);
+        setConfirmLoading(false);
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+      },
+    });
   }, [pageId, platform]);
 
   const handleAssign = useCallback((comment) => {
@@ -426,32 +445,36 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
   }, []);
 
   const handleAssignClose = useCallback((success, selectedUser) => {
-    if (success && selectedUser && assignModal.comment) {
-      setComments(prev => prev.map(c =>
-        c._id === assignModal.comment._id
-          ? { ...c, assigned_to: { _id: selectedUser._id, name: selectedUser.name, email: selectedUser.email } }
-          : c
-      ));
-    }
-    setAssignModal({ visible: false, comment: null });
-  }, [assignModal.comment]);
+  if (success && selectedUser && assignModal.comment) {
+    setComments(prev => prev.map(c =>
+      c._id === assignModal.comment._id
+        ? { ...c, assigned_to: { _id: selectedUser._id, name: selectedUser.name, email: selectedUser.email } }
+        : c
+    ));
+    showToast('success', 'Comment assigned');
+  }
+  setAssignModal({ visible: false, comment: null });
+}, [assignModal.comment]);
 
   const handleBlock = useCallback((comment) => {
     const userName = comment.from?.name ?? 'this user';
-    Alert.alert('Block User', `Block ${userName}? They won't be able to comment on your posts.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Block', style: 'destructive', onPress: async () => {
-          const result = await blockUser({ pageId, userId: comment.from?.id, platform });
-          if (result.success) {
-            setBlockedUserIds(prev => new Set([...prev, comment.from?.id]));
-            Alert.alert('Blocked', `${userName} has been blocked.`);
-          } else {
-            Alert.alert('Block Failed', result.message);
-          }
+    showConfirm({
+      title: 'Block User',
+      message: `Block ${userName}? They won't be able to comment on your posts.`,
+      type: 'delete',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        const result = await blockUser({ pageId, userId: comment.from?.id, platform });
+        if (result.success) {
+          setBlockedUserIds(prev => new Set([...prev, comment.from?.id]));
+          showToast('success', `${userName} blocked`);
+        } else {
+          showToast('error', result.message || 'Failed to block user');
         }
-      }
-    ]);
+        setConfirmLoading(false);
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+      },
+    });
   }, [pageId, platform]);
 
   const handleMenuSelect = useCallback((comment, key) => {
@@ -461,20 +484,20 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
         break;
       }
       case 'view_platform': {
-        const url = comment.post?.permalink_url;
-        if (url) Linking.openURL(url);
-        else Alert.alert('Error', 'No link available');
-        break;
-      }
-      case 'view_post': {
-        const postId = getPostIdFromComment(comment, platform);
-        if (postId && onNavigateToPost) {
-          onNavigateToPost(postId);
-        } else {
-          Alert.alert('Error', 'Cannot navigate to post');
+          const url = comment.post?.permalink_url;
+          if (url) Linking.openURL(url);
+          else showToast('error', 'No link available');
+          break;
         }
-        break;
-      }
+        case 'view_post': {
+          const postId = getPostIdFromComment(comment, platform);
+          if (postId && onNavigateToPost) {
+            onNavigateToPost(postId);
+          } else {
+            showToast('error', 'Cannot navigate to post');
+          }
+          break;
+        }
       case 'user_comments': {
         setUserSheet({
           visible: true,
@@ -506,6 +529,23 @@ const CommentsTab = ({ pageId, pageName, platform = 'facebook', onNavigateToPost
 
   return (
     <View className="flex-1">
+      <StatusToast
+        visible={toast.visible}
+        type={toast.type}
+        message={toast.message}
+        onHide={() => setToast({ visible: false, type: 'success', message: '' })}
+      />
+
+      <ConfirmModal
+        visible={confirmModal.visible}
+        onClose={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
+        confirmText={confirmModal.type === 'delete' ? 'Delete' : 'Confirm'}
+        loading={confirmLoading}
+      />
       <View className="bg-white rounded-xl p-4 mb-4 border border-slate-200">
         <View className="flex-row mb-3">
           <FilterButton title="New First" isActive={sort === 'desc'} onPress={() => setSort('desc')} />

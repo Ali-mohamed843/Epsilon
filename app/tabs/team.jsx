@@ -10,52 +10,23 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Image,
 } from 'react-native';
 import {
-  Plus,
-  Eye,
-  Edit2,
-  Trash2,
-  ArrowLeft,
-  Users,
-  Mail,
-  Calendar,
-  Shield,
-  X,
-  User,
-  Lock,
-  Building2,
-  ChevronDown,
-  Check,
-  EyeOff,
-  MessageSquare,
-  Clock,
-  BarChart3,
-  Zap,
-  TrendingUp,
-  Menu,
-  Search,
-  FileText,
+  Plus, Eye, Edit2, Trash2, ArrowLeft, Users, Mail, Calendar, Shield, X,
+  User, Lock, Building2, ChevronDown, Check, EyeOff, MessageSquare, Clock,
+  BarChart3, Zap, TrendingUp, Menu, Search, FileText,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import Header from '@/components/Header';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import StatusToast from '@/components/ui/StatusToast';
 import {
-  getTeamMembers,
-  getRoles,
-  createUser,
-  getUserProfile,
-  updateUser,
-  deleteUser,
-  getUserDayStats,
-  getFacebookPages,
-  getInstagramPages,
-  getTiktokPages,
-  getSnapchatPages,
-  assignPagesToUser,
+  getTeamMembers, getRoles, createUser, getUserProfile, updateUser, deleteUser,
+  getUserDayStats, getFacebookPages, getInstagramPages, getTiktokPages,
+  getSnapchatPages, assignPagesToUser,
 } from '@/Api/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -82,11 +53,10 @@ const formatTimeSince = (dateString) => {
   return 'Just now';
 };
 
-
 const FormInput = ({
   label, value, onChangeText, placeholder, icon: Icon,
   keyboardType = 'default', secureTextEntry = false, required = false,
-  autoCapitalize = 'sentences', optional = false,
+  autoCapitalize = 'sentences', optional = false, error = '',
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const isSecure = secureTextEntry && !showPassword;
@@ -98,8 +68,8 @@ const FormInput = ({
         {optional && <Text className="text-slate-400 text-xs font-normal">(optional)</Text>}
       </Text>
       <View className="flex-row items-center bg-slate-50 border rounded-xl px-4"
-        style={{ borderColor: value?.trim() ? BRAND : '#e2e8f0' }}>
-        <Icon size={16} color="#94A3B8" />
+        style={{ borderColor: error ? '#EF4444' : value?.trim() ? BRAND : '#e2e8f0' }}>
+        <Icon size={16} color={error ? '#EF4444' : '#94A3B8'} />
         <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
           placeholderTextColor="#94A3B8" keyboardType={keyboardType}
           secureTextEntry={isSecure} autoCapitalize={autoCapitalize}
@@ -111,11 +81,12 @@ const FormInput = ({
           </TouchableOpacity>
         )}
       </View>
+      {error ? <Text className="text-red-500 text-xs mt-1 ml-1">{error}</Text> : null}
     </View>
   );
 };
 
-const RoleDropdown = ({ roles, selectedRoleId, onSelect, loading }) => {
+const RoleDropdown = ({ roles, selectedRoleId, onSelect, loading, error = '' }) => {
   const [open, setOpen] = useState(false);
   const selectedRole = roles.find((r) => r._id === selectedRoleId);
   return (
@@ -132,15 +103,16 @@ const RoleDropdown = ({ roles, selectedRoleId, onSelect, loading }) => {
         <>
           <TouchableOpacity onPress={() => setOpen(!open)} activeOpacity={0.7}
             className="flex-row items-center justify-between bg-slate-50 border rounded-xl px-4 py-3"
-            style={{ borderColor: selectedRoleId ? BRAND : '#e2e8f0' }}>
+            style={{ borderColor: error ? '#EF4444' : selectedRoleId ? BRAND : '#e2e8f0' }}>
             <View className="flex-row items-center flex-1">
-              <Shield size={16} color="#94A3B8" />
+              <Shield size={16} color={error ? '#EF4444' : '#94A3B8'} />
               <Text className="text-sm ml-3" style={{ color: selectedRole ? '#1e293b' : '#94A3B8' }}>
                 {selectedRole ? selectedRole.name : 'Select a role...'}
               </Text>
             </View>
             <ChevronDown size={18} color="#94A3B8" style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }} />
           </TouchableOpacity>
+          {error ? <Text className="text-red-500 text-xs mt-1 ml-1">{error}</Text> : null}
           {open && (
             <View className="mt-1 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-lg">
               <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled showsVerticalScrollIndicator>
@@ -183,11 +155,14 @@ const UserModal = ({ visible, onClose, onSaved, editMember = null }) => {
   const [saving, setSaving] = useState(false);
   const [loadingUser, setLoadingUser] = useState(false);
   const [userError, setUserError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     if (visible) {
       setName(''); setEmail(''); setPassword(''); setConfirmPassword('');
       setCompanyName(''); setSelectedRoleId(''); setSaving(false); setUserError('');
+      setErrors({}); setSaveError('');
       fetchRoles();
       if (isEditMode) fetchUserData(editMember._id || editMember.id);
     }
@@ -211,23 +186,41 @@ const UserModal = ({ visible, onClose, onSaved, editMember = null }) => {
     setLoadingUser(false);
   };
 
+  const clearError = (field) => {
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!name.trim()) e.name = 'Name is required';
+    if (!email.trim()) e.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email.trim())) e.email = 'Invalid email format';
+    if (!isEditMode && !password.trim()) e.password = 'Password is required';
+    else if (!isEditMode && password.length < 6) e.password = 'Password must be at least 6 characters';
+    if (!isEditMode && password !== confirmPassword) e.confirmPassword = 'Passwords do not match';
+    if (isEditMode && password.trim() && password !== confirmPassword) e.confirmPassword = 'Passwords do not match';
+    if (!selectedRoleId) e.role = 'Please select a role';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleSave = async () => {
-    if (!name.trim()) return Alert.alert('Validation', 'Please enter a name.');
-    if (!email.trim()) return Alert.alert('Validation', 'Please enter an email.');
-    if (!isEditMode && !password.trim()) return Alert.alert('Validation', 'Please enter a password.');
-    if (!isEditMode && password !== confirmPassword) return Alert.alert('Validation', 'Passwords do not match.');
-    if (isEditMode && password.trim() && password !== confirmPassword) return Alert.alert('Validation', 'Passwords do not match.');
-    if (!selectedRoleId) return Alert.alert('Validation', 'Please select a role.');
+    if (!validate()) return;
     setSaving(true);
+    setSaveError('');
     try {
       const result = isEditMode
         ? await updateUser(editMember._id || editMember.id, { name: name.trim(), email: email.trim(), password: password.trim() || undefined, password_confirmation: confirmPassword.trim() || undefined, company_name: companyName.trim(), role: selectedRoleId })
         : await createUser({ name: name.trim(), email: email.trim(), password: password.trim(), password_confirmation: confirmPassword.trim(), company_name: companyName.trim(), role: selectedRoleId });
       if (result.success) {
-        Alert.alert('Success', isEditMode ? `User "${name.trim()}" updated!` : `User "${name.trim()}" created!`);
-        onSaved(result.user, isEditMode); onClose();
-      } else Alert.alert('Error', result.message || 'Failed to save user.');
-    } catch (e) { Alert.alert('Error', e.message); }
+        onSaved(result.user, isEditMode);
+        onClose();
+      } else {
+        setSaveError(result.message || 'Failed to save user');
+      }
+    } catch (e) {
+      setSaveError(e.message || 'Something went wrong');
+    }
     setSaving(false);
   };
 
@@ -237,8 +230,8 @@ const UserModal = ({ visible, onClose, onSaved, editMember = null }) => {
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
         <TouchableOpacity activeOpacity={1} onPress={onClose} className="flex-1 bg-black/50 justify-center items-center px-5">
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} className="bg-white rounded-2xl w-full max-w-md overflow-hidden"
-            style={{ maxHeight: '90%', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 20 }}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} className="bg-white rounded-2xl w-full max-w-md"
+            style={{ maxHeight: '90%', overflow: 'hidden' }}>
             <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100" style={{ backgroundColor: '#6e226e08' }}>
               <View className="flex-row items-center">
                 <View className="w-9 h-9 rounded-lg items-center justify-center mr-3" style={{ backgroundColor: '#6e226e15' }}>
@@ -266,12 +259,17 @@ const UserModal = ({ visible, onClose, onSaved, editMember = null }) => {
             ) : (
               <>
                 <ScrollView className="px-5 py-4" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-                  <FormInput label="Name" value={name} onChangeText={setName} placeholder="Enter full name..." icon={User} required autoCapitalize="words" />
-                  <FormInput label="Email" value={email} onChangeText={setEmail} placeholder="Enter email address..." icon={Mail} keyboardType="email-address" required autoCapitalize="none" />
-                  <FormInput label={isEditMode ? 'New Password' : 'Password'} value={password} onChangeText={setPassword} placeholder={isEditMode ? 'Leave empty to keep current...' : 'Enter password...'} icon={Lock} secureTextEntry required={!isEditMode} optional={isEditMode} autoCapitalize="none" />
-                  <FormInput label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm password..." icon={Lock} secureTextEntry required={!isEditMode} optional={isEditMode} autoCapitalize="none" />
+                  {saveError ? (
+                    <View className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+                      <Text className="text-red-600 text-sm">{saveError}</Text>
+                    </View>
+                  ) : null}
+                  <FormInput label="Name" value={name} onChangeText={(t) => { setName(t); clearError('name'); }} placeholder="Enter full name..." icon={User} required autoCapitalize="words" error={errors.name} />
+                  <FormInput label="Email" value={email} onChangeText={(t) => { setEmail(t); clearError('email'); }} placeholder="Enter email address..." icon={Mail} keyboardType="email-address" required autoCapitalize="none" error={errors.email} />
+                  <FormInput label={isEditMode ? 'New Password' : 'Password'} value={password} onChangeText={(t) => { setPassword(t); clearError('password'); }} placeholder={isEditMode ? 'Leave empty to keep current...' : 'Enter password...'} icon={Lock} secureTextEntry required={!isEditMode} optional={isEditMode} autoCapitalize="none" error={errors.password} />
+                  <FormInput label="Confirm Password" value={confirmPassword} onChangeText={(t) => { setConfirmPassword(t); clearError('confirmPassword'); }} placeholder="Confirm password..." icon={Lock} secureTextEntry required={!isEditMode} optional={isEditMode} autoCapitalize="none" error={errors.confirmPassword} />
                   <FormInput label="Company" value={companyName} onChangeText={setCompanyName} placeholder="Enter company name..." icon={Building2} autoCapitalize="words" />
-                  <RoleDropdown roles={roles} selectedRoleId={selectedRoleId} onSelect={setSelectedRoleId} loading={loadingRoles} />
+                  <RoleDropdown roles={roles} selectedRoleId={selectedRoleId} onSelect={(id) => { setSelectedRoleId(id); clearError('role'); }} loading={loadingRoles} error={errors.role} />
                 </ScrollView>
                 <View className="flex-row px-5 py-4 border-t border-slate-100 gap-3">
                   <TouchableOpacity onPress={onClose} activeOpacity={0.7} className="flex-1 py-3 rounded-xl items-center border border-slate-200 bg-white">
@@ -289,53 +287,6 @@ const UserModal = ({ visible, onClose, onSaved, editMember = null }) => {
           </TouchableOpacity>
         </TouchableOpacity>
       </KeyboardAvoidingView>
-    </Modal>
-  );
-};
-
-const DeleteUserModal = ({ visible, member, onClose, onDeleted }) => {
-  const [deleting, setDeleting] = useState(false);
-  useEffect(() => { if (visible) setDeleting(false); }, [visible]);
-  const handleDelete = async () => {
-    if (!member) return;
-    setDeleting(true);
-    try {
-      const r = await deleteUser(member._id || member.id);
-      if (r.success) { Alert.alert('Success', `User "${member.name}" deleted!`); onDeleted(member._id || member.id); onClose(); }
-      else Alert.alert('Error', r.message || 'Failed to delete user.');
-    } catch (e) { Alert.alert('Error', e.message); }
-    setDeleting(false);
-  };
-  if (!member) return null;
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity activeOpacity={1} onPress={onClose} className="flex-1 bg-black/50 justify-center items-center px-5">
-        <TouchableOpacity activeOpacity={1} onPress={() => {}} className="bg-white rounded-2xl w-full max-w-sm overflow-hidden"
-          style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 20 }}>
-          <View className="items-center pt-6 pb-4 px-6">
-            <View className="w-14 h-14 rounded-full items-center justify-center mb-4 bg-red-50"><Trash2 size={24} color="#EF4444" /></View>
-            <Text className="text-lg font-bold text-slate-800 text-center">Delete Member</Text>
-            <Text className="text-sm text-slate-400 text-center mt-2 px-2">Are you sure you want to delete <Text className="font-semibold text-slate-600">"{member.name}"</Text>?</Text>
-          </View>
-          <View className="mx-6 mb-4 rounded-xl p-3 flex-row items-center" style={{ backgroundColor: '#6e226e08' }}>
-            <View className="w-10 h-10 rounded-full items-center justify-center" style={{ backgroundColor: BRAND }}>
-              <Text className="text-white font-bold text-sm">{getInitials(member.name)}</Text>
-            </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-sm font-semibold text-slate-700">{member.name}</Text>
-              <Text className="text-[11px] text-slate-400 mt-0.5">{member.email}</Text>
-            </View>
-          </View>
-          <View className="flex-row px-6 pb-6 gap-3">
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7} className="flex-1 py-3 rounded-xl items-center border border-slate-200 bg-white">
-              <Text className="text-sm font-semibold text-slate-500">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} disabled={deleting} activeOpacity={0.7} className="flex-1 py-3 rounded-xl items-center flex-row justify-center" style={{ backgroundColor: deleting ? '#ef444480' : '#EF4444' }}>
-              {deleting ? <ActivityIndicator size="small" color="#ffffff" /> : (<><Trash2 size={16} color="#ffffff" /><Text className="text-sm font-semibold text-white ml-1.5">Delete</Text></>)}
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
     </Modal>
   );
 };
@@ -385,7 +336,7 @@ const PerformanceModal = ({ visible, member, onClose }) => {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} onPress={onClose} className="flex-1 bg-black/50 justify-center items-center px-4">
-        <TouchableOpacity activeOpacity={1} onPress={() => {}} className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ maxHeight: '85%', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 20 }}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} className="bg-white rounded-2xl w-full max-w-md" style={{ maxHeight: '85%', overflow: 'hidden' }}>
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100" style={{ backgroundColor: '#6e226e08' }}>
             <View className="flex-row items-center flex-1">
               <View className="w-11 h-11 rounded-full items-center justify-center mr-3" style={{ backgroundColor: BRAND }}><Text className="text-white font-bold text-base">{getInitials(member.name)}</Text></View>
@@ -441,7 +392,6 @@ const PerformanceModal = ({ visible, member, onClose }) => {
   );
 };
 
-
 const ASSIGN_PLATFORMS = [
   { key: 'facebook', label: 'Facebook' },
   { key: 'instagram', label: 'Instagram' },
@@ -449,7 +399,7 @@ const ASSIGN_PLATFORMS = [
   { key: 'snapchat', label: 'Snapchat' },
 ];
 
-const AssignPagesModal = ({ visible, member, onClose, onSaved }) => {
+const AssignPagesModal = ({ visible, member, onClose, onSaved, showToast }) => {
   const [platform, setPlatform] = useState('facebook');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -463,9 +413,7 @@ const AssignPagesModal = ({ visible, member, onClose, onSaved }) => {
 
   useEffect(() => {
     if (!visible || !memberId) return;
-    setSearch('');
-    setDropdownOpen(false);
-    setError('');
+    setSearch(''); setDropdownOpen(false); setError('');
     loadData(platform);
   }, [visible, memberId, platform]);
 
@@ -478,21 +426,17 @@ const AssignPagesModal = ({ visible, member, onClose, onSaved }) => {
   const getAssignedArr = (userObj, plat) => {
     if (!userObj) return [];
     switch (plat) {
-      case 'facebook':  return userObj.assigned_pages || [];
+      case 'facebook': return userObj.assigned_pages || [];
       case 'instagram': return userObj.instagram_assigned_pages || [];
-      case 'tiktok':    return userObj.tiktok_assigned_pages || [];
-      case 'snapchat':  return userObj.snapchat_assigned_pages || [];
+      case 'tiktok': return userObj.tiktok_assigned_pages || [];
+      case 'snapchat': return userObj.snapchat_assigned_pages || [];
       default: return [];
     }
   };
 
   const loadData = async (plat) => {
     const thisLoad = ++loadIdRef.current;
-    setLoading(true);
-    setError('');
-    setAllPages([]);
-    setSelectedIds(new Set());
-
+    setLoading(true); setError(''); setAllPages([]); setSelectedIds(new Set());
     try {
       let pageList = [];
       switch (plat) {
@@ -500,381 +444,119 @@ const AssignPagesModal = ({ visible, member, onClose, onSaved }) => {
           const adminId = member?.admin || (await AsyncStorage.getItem('user_id'));
           if (!adminId) throw new Error('Admin ID not found');
           const r = await getFacebookPages(adminId);
-          if (!r?.success) throw new Error(r?.message || 'Failed to load pages');
-          pageList = r.pages || [];
-          break;
+          if (!r?.success) throw new Error(r?.message || 'Failed');
+          pageList = r.pages || []; break;
         }
-        case 'instagram': {
-          const r = await getInstagramPages();
-          if (!r?.success) throw new Error(r?.message || 'Failed to load pages');
-          pageList = r.pages || [];
-          break;
-        }
-        case 'tiktok': {
-          const r = await getTiktokPages();
-          if (!r?.success) throw new Error(r?.message || 'Failed to load pages');
-          pageList = r.pages || [];
-          break;
-        }
-        case 'snapchat': {
-          const r = await getSnapchatPages();
-          if (!r?.success) throw new Error(r?.message || 'Failed to load pages');
-          pageList = r.pages || [];
-          break;
-        }
+        case 'instagram': { const r = await getInstagramPages(); if (!r?.success) throw new Error(r?.message || 'Failed'); pageList = r.pages || []; break; }
+        case 'tiktok': { const r = await getTiktokPages(); if (!r?.success) throw new Error(r?.message || 'Failed'); pageList = r.pages || []; break; }
+        case 'snapchat': { const r = await getSnapchatPages(); if (!r?.success) throw new Error(r?.message || 'Failed'); pageList = r.pages || []; break; }
       }
-
       if (thisLoad !== loadIdRef.current) return;
       const assignedIds = new Set();
-
       for (const page of pageList) {
-        const admins = page.page_admins;
-        if (Array.isArray(admins)) {
-          for (const admin of admins) {
-            if (extractId(admin) === memberId) {
-              assignedIds.add(page._id || page.id);
-            }
-          }
+        if (Array.isArray(page.page_admins)) {
+          for (const admin of page.page_admins) { if (extractId(admin) === memberId) assignedIds.add(page._id || page.id); }
         }
       }
-
-      if (assignedIds.size === 0) {
-        const arr = getAssignedArr(member, plat);
-        for (const item of arr) {
-          const id = extractId(item);
-          if (id) assignedIds.add(id);
-        }
-      }
-
+      if (assignedIds.size === 0) { for (const item of getAssignedArr(member, plat)) { const id = extractId(item); if (id) assignedIds.add(id); } }
       if (assignedIds.size === 0) {
         try {
-          const profileResult = await getUserProfile(memberId);
+          const pr = await getUserProfile(memberId);
           if (thisLoad !== loadIdRef.current) return;
-          if (profileResult?.success && profileResult.user) {
-            const arr = getAssignedArr(profileResult.user, plat);
-            for (const item of arr) {
-              const id = extractId(item);
-              if (id) assignedIds.add(id);
-            }
-          }
+          if (pr?.success && pr.user) { for (const item of getAssignedArr(pr.user, plat)) { const id = extractId(item); if (id) assignedIds.add(id); } }
         } catch {}
       }
-
       if (thisLoad !== loadIdRef.current) return;
-
-      setAllPages(pageList);
-      setSelectedIds(new Set(assignedIds));
-    } catch (e) {
-      if (thisLoad !== loadIdRef.current) return;
-      setError(e.message || 'Unknown error');
-    }
-
+      setAllPages(pageList); setSelectedIds(new Set(assignedIds));
+    } catch (e) { if (thisLoad !== loadIdRef.current) return; setError(e.message || 'Unknown error'); }
     if (thisLoad === loadIdRef.current) setLoading(false);
   };
 
-  const togglePage = (id) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const togglePage = (id) => { setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
 
   const handleAssign = async () => {
     if (!memberId) return;
     setSaving(true);
     try {
-      const result = await assignPagesToUser({
-        pages: Array.from(selectedIds),
-        userId: memberId,
-        platform,
-      });
+      const result = await assignPagesToUser({ pages: Array.from(selectedIds), userId: memberId, platform });
       if (result.success) {
-        Alert.alert('Success', 'Page assignments updated!', [
-          { text: 'OK', onPress: () => { onSaved?.(); onClose(); } }
-        ]);
+        showToast?.('success', 'Page assignments updated!');
+        onSaved?.(); onClose();
       } else {
-        Alert.alert('Error', result.message || 'Failed to update assignments.');
+        showToast?.('error', result.message || 'Failed to update assignments');
       }
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    }
+    } catch (e) { showToast?.('error', e.message); }
     setSaving(false);
   };
 
   const pname = (p) => p.name || p.username || 'Unnamed';
-  const ppic = (p) => {
-    if (typeof p.picture === 'string' && p.picture) return p.picture;
-    return p.picture?.url || p.picture?.data?.url || null;
-  };
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return allPages;
-    const q = search.toLowerCase();
-    return allPages.filter((p) => pname(p).toLowerCase().includes(q));
-  }, [allPages, search]);
+  const ppic = (p) => { if (typeof p.picture === 'string' && p.picture) return p.picture; return p.picture?.url || p.picture?.data?.url || null; };
+  const filtered = useMemo(() => { if (!search.trim()) return allPages; const q = search.toLowerCase(); return allPages.filter((p) => pname(p).toLowerCase().includes(q)); }, [allPages, search]);
 
   if (!member) return null;
-
   const activePlatform = ASSIGN_PLATFORMS.find((p) => p.key === platform);
   const assignedCount = selectedIds.size;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View className="flex-1 bg-black/50 justify-center items-center px-4">
-        <View
-          className="bg-white rounded-2xl w-full"
-          style={{
-            height: '90%',
-            maxWidth: 448,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.25,
-            shadowRadius: 20,
-            elevation: 20,
-            flexDirection: 'column',
-          }}
-        >
-          <View
-            className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100"
-            style={{ backgroundColor: '#6e226e08' }}
-          >
+        <View className="bg-white rounded-2xl w-full" style={{ height: '90%', maxWidth: 448, overflow: 'hidden' }}>
+          <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100" style={{ backgroundColor: '#6e226e08' }}>
             <View className="flex-row items-center flex-1">
-              <View
-                className="w-11 h-11 rounded-full items-center justify-center mr-3"
-                style={{ backgroundColor: BRAND }}
-              >
-                <Text className="text-white font-bold text-base">
-                  {getInitials(member.name)}
-                </Text>
-              </View>
-              <View className="flex-1">
-                <Text className="text-base font-bold" style={{ color: BRAND }} numberOfLines={1}>
-                  Assign Pages
-                </Text>
-                <Text className="text-[11px] text-slate-400 mt-0.5" numberOfLines={1}>
-                  {member.name} • {assignedCount} assigned
-                </Text>
-              </View>
+              <View className="w-11 h-11 rounded-full items-center justify-center mr-3" style={{ backgroundColor: BRAND }}><Text className="text-white font-bold text-base">{getInitials(member.name)}</Text></View>
+              <View className="flex-1"><Text className="text-base font-bold" style={{ color: BRAND }} numberOfLines={1}>Assign Pages</Text><Text className="text-[11px] text-slate-400 mt-0.5" numberOfLines={1}>{member.name} • {assignedCount} assigned</Text></View>
             </View>
-            <TouchableOpacity
-              onPress={onClose}
-              activeOpacity={0.7}
-              className="w-8 h-8 rounded-lg items-center justify-center bg-slate-100"
-            >
-              <X size={16} color="#64748B" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7} className="w-8 h-8 rounded-lg items-center justify-center bg-slate-100"><X size={16} color="#64748B" /></TouchableOpacity>
           </View>
 
           <View className="px-5 pt-4">
             <Text className="text-sm font-semibold text-slate-700 mb-2">Platform</Text>
-            <TouchableOpacity
-              onPress={() => !loading && setDropdownOpen(!dropdownOpen)}
-              activeOpacity={0.7}
-              className="flex-row items-center justify-between bg-slate-50 border rounded-xl px-4 py-3"
-              style={{ borderColor: '#6e226e40', opacity: loading ? 0.6 : 1 }}
-            >
-              <View className="flex-row items-center">
-                <Shield size={16} color={BRAND} />
-                <Text className="text-sm font-semibold ml-2" style={{ color: BRAND }}>
-                  {activePlatform?.label}
-                </Text>
-              </View>
-              <ChevronDown
-                size={18}
-                color="#94A3B8"
-                style={{ transform: [{ rotate: dropdownOpen ? '180deg' : '0deg' }] }}
-              />
+            <TouchableOpacity onPress={() => !loading && setDropdownOpen(!dropdownOpen)} activeOpacity={0.7} className="flex-row items-center justify-between bg-slate-50 border rounded-xl px-4 py-3" style={{ borderColor: '#6e226e40', opacity: loading ? 0.6 : 1 }}>
+              <View className="flex-row items-center"><Shield size={16} color={BRAND} /><Text className="text-sm font-semibold ml-2" style={{ color: BRAND }}>{activePlatform?.label}</Text></View>
+              <ChevronDown size={18} color="#94A3B8" style={{ transform: [{ rotate: dropdownOpen ? '180deg' : '0deg' }] }} />
             </TouchableOpacity>
-
             {dropdownOpen && (
               <View className="mt-1 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-lg">
-                {ASSIGN_PLATFORMS.map((p) => {
-                  const active = platform === p.key;
-                  return (
-                    <TouchableOpacity
-                      key={p.key}
-                      onPress={() => { if (p.key !== platform) setPlatform(p.key); setDropdownOpen(false); }}
-                      activeOpacity={0.7}
-                      className="flex-row items-center px-4 py-3 border-b border-slate-50"
-                      style={{ backgroundColor: active ? '#6e226e08' : 'transparent' }}
-                    >
-                      <Shield size={14} color={active ? BRAND : '#94A3B8'} />
-                      <Text className="flex-1 text-sm font-medium ml-3" style={{ color: active ? BRAND : '#334155' }}>
-                        {p.label}
-                      </Text>
-                      {active && <Check size={16} color={BRAND} strokeWidth={3} />}
-                    </TouchableOpacity>
-                  );
-                })}
+                {ASSIGN_PLATFORMS.map((p) => { const active = platform === p.key; return (
+                  <TouchableOpacity key={p.key} onPress={() => { if (p.key !== platform) setPlatform(p.key); setDropdownOpen(false); }} activeOpacity={0.7} className="flex-row items-center px-4 py-3 border-b border-slate-50" style={{ backgroundColor: active ? '#6e226e08' : 'transparent' }}>
+                    <Shield size={14} color={active ? BRAND : '#94A3B8'} /><Text className="flex-1 text-sm font-medium ml-3" style={{ color: active ? BRAND : '#334155' }}>{p.label}</Text>{active && <Check size={16} color={BRAND} strokeWidth={3} />}
+                  </TouchableOpacity>
+                ); })}
               </View>
             )}
           </View>
 
           <View className="px-5 pt-3 pb-2">
             <View className="flex-row items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-              <Search size={16} color="#94A3B8" />
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search pages..."
-                placeholderTextColor="#94A3B8"
-                className="flex-1 ml-2 text-sm text-slate-800"
-              />
-              {search.trim() !== '' && (
-                <TouchableOpacity onPress={() => setSearch('')}>
-                  <X size={14} color="#94A3B8" />
-                </TouchableOpacity>
-              )}
+              <Search size={16} color="#94A3B8" /><TextInput value={search} onChangeText={setSearch} placeholder="Search pages..." placeholderTextColor="#94A3B8" className="flex-1 ml-2 text-sm text-slate-800" />
+              {search.trim() !== '' && <TouchableOpacity onPress={() => setSearch('')}><X size={14} color="#94A3B8" /></TouchableOpacity>}
             </View>
           </View>
 
-          {/* ── Count ── */}
-          <View className="px-5 pb-2">
-            <Text className="text-xs text-slate-400">
-              {filtered.length} page{filtered.length !== 1 ? 's' : ''} • {assignedCount} selected
-            </Text>
-          </View>
+          <View className="px-5 pb-2"><Text className="text-xs text-slate-400">{filtered.length} page{filtered.length !== 1 ? 's' : ''} • {assignedCount} selected</Text></View>
 
           <View className="flex-1" style={{ minHeight: 200 }}>
-            <ScrollView
-              showsVerticalScrollIndicator
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }}
-              nestedScrollEnabled
-            >
-              {loading && (
-                <View className="items-center justify-center py-12">
-                  <ActivityIndicator size="large" color={BRAND} />
-                  <Text className="text-slate-400 text-sm mt-3">Loading pages...</Text>
-                </View>
-              )}
-
-              {!loading && error !== '' && (
-                <View className="items-center justify-center py-10">
-                  <Text className="text-slate-500 text-sm mb-2">{error}</Text>
-                  <TouchableOpacity
-                    onPress={() => loadData(platform)}
-                    className="px-4 py-2 rounded-lg"
-                    style={{ backgroundColor: BRAND }}
-                  >
-                    <Text className="text-white text-xs font-semibold">Retry</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {!loading && !error && filtered.length === 0 && (
-                <View className="items-center justify-center py-12">
-                  <View
-                    className="w-16 h-16 rounded-full items-center justify-center mb-4"
-                    style={{ backgroundColor: '#6e226e08' }}
-                  >
-                    <FileText size={28} color={BRAND} />
-                  </View>
-                  <Text className="text-slate-500 text-sm font-medium">No pages found</Text>
-                  <Text className="text-slate-400 text-xs mt-1">
-                    No {activePlatform?.label} pages available
-                  </Text>
-                </View>
-              )}
-
+            <ScrollView showsVerticalScrollIndicator contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }} nestedScrollEnabled>
+              {loading && <View className="items-center justify-center py-12"><ActivityIndicator size="large" color={BRAND} /><Text className="text-slate-400 text-sm mt-3">Loading pages...</Text></View>}
+              {!loading && error !== '' && <View className="items-center justify-center py-10"><Text className="text-slate-500 text-sm mb-2">{error}</Text><TouchableOpacity onPress={() => loadData(platform)} className="px-4 py-2 rounded-lg" style={{ backgroundColor: BRAND }}><Text className="text-white text-xs font-semibold">Retry</Text></TouchableOpacity></View>}
+              {!loading && !error && filtered.length === 0 && <View className="items-center justify-center py-12"><View className="w-16 h-16 rounded-full items-center justify-center mb-4" style={{ backgroundColor: '#6e226e08' }}><FileText size={28} color={BRAND} /></View><Text className="text-slate-500 text-sm font-medium">No pages found</Text></View>}
               {!loading && !error && filtered.map((page) => {
-                const id = page._id || page.id;
-                const name = pname(page);
-                const pic = ppic(page);
-                const isChecked = selectedIds.has(id);
-
+                const id = page._id || page.id; const name = pname(page); const pic = ppic(page); const isChecked = selectedIds.has(id);
                 return (
-                  <TouchableOpacity
-                    key={id}
-                    onPress={() => togglePage(id)}
-                    activeOpacity={0.7}
-                    className="flex-row items-center py-3 px-3 mb-2 rounded-xl border"
-                    style={{
-                      borderColor: isChecked ? '#6e226e60' : '#e2e8f0',
-                      backgroundColor: isChecked ? '#6e226e08' : '#ffffff',
-                    }}
-                  >
-                    {pic ? (
-                      <Image
-                        source={{ uri: pic }}
-                        className="w-10 h-10 rounded-lg mr-3"
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View
-                        className="w-10 h-10 rounded-lg mr-3 items-center justify-center"
-                        style={{ backgroundColor: isChecked ? '#6e226e15' : '#f1f5f9' }}
-                      >
-                        <Text
-                          className="text-sm font-bold"
-                          style={{ color: isChecked ? BRAND : '#94A3B8' }}
-                        >
-                          {getInitials(name)}
-                        </Text>
-                      </View>
-                    )}
-
-                    <View className="flex-1 mr-3">
-                      <Text
-                        className="text-sm font-semibold"
-                        style={{ color: isChecked ? '#1e293b' : '#475569' }}
-                        numberOfLines={1}
-                      >
-                        {name}
-                      </Text>
-                      <Text
-                        className="text-[10px] mt-0.5"
-                        style={{ color: isChecked ? BRAND : '#94A3B8' }}
-                      >
-                        {isChecked ? 'Assigned' : 'Not assigned'}
-                      </Text>
-                    </View>
-
-                    <View
-                      className="w-6 h-6 rounded-md items-center justify-center border-2"
-                      style={{
-                        borderColor: isChecked ? BRAND : '#cbd5e1',
-                        backgroundColor: isChecked ? BRAND : '#ffffff',
-                      }}
-                    >
-                      {isChecked && <Check size={14} color="#ffffff" strokeWidth={3} />}
-                    </View>
+                  <TouchableOpacity key={id} onPress={() => togglePage(id)} activeOpacity={0.7} className="flex-row items-center py-3 px-3 mb-2 rounded-xl border" style={{ borderColor: isChecked ? '#6e226e60' : '#e2e8f0', backgroundColor: isChecked ? '#6e226e08' : '#ffffff' }}>
+                    {pic ? <Image source={{ uri: pic }} className="w-10 h-10 rounded-lg mr-3" resizeMode="cover" /> : <View className="w-10 h-10 rounded-lg mr-3 items-center justify-center" style={{ backgroundColor: isChecked ? '#6e226e15' : '#f1f5f9' }}><Text className="text-sm font-bold" style={{ color: isChecked ? BRAND : '#94A3B8' }}>{getInitials(name)}</Text></View>}
+                    <View className="flex-1 mr-3"><Text className="text-sm font-semibold" style={{ color: isChecked ? '#1e293b' : '#475569' }} numberOfLines={1}>{name}</Text><Text className="text-[10px] mt-0.5" style={{ color: isChecked ? BRAND : '#94A3B8' }}>{isChecked ? 'Assigned' : 'Not assigned'}</Text></View>
+                    <View className="w-6 h-6 rounded-md items-center justify-center border-2" style={{ borderColor: isChecked ? BRAND : '#cbd5e1', backgroundColor: isChecked ? BRAND : '#ffffff' }}>{isChecked && <Check size={14} color="#ffffff" strokeWidth={3} />}</View>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
           </View>
 
-          <View
-            className="px-5 py-4 border-t border-slate-100 bg-white flex-row gap-3"
-            style={{ borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}
-          >
-            <TouchableOpacity
-              onPress={onClose}
-              activeOpacity={0.7}
-              className="flex-1 py-3 rounded-xl items-center border border-slate-200 bg-white"
-            >
-              <Text className="text-sm font-semibold text-slate-500">Close</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handleAssign}
-              disabled={saving}
-              activeOpacity={0.7}
-              className="flex-1 py-3 rounded-xl items-center flex-row justify-center"
-              style={{ backgroundColor: saving ? `${BRAND}60` : BRAND }}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Check size={16} color="#ffffff" strokeWidth={2.5} />
-                  <Text className="text-sm font-semibold text-white ml-1.5">
-                    Assign ({assignedCount})
-                  </Text>
-                </>
-              )}
+          <View className="px-5 py-4 border-t border-slate-100 bg-white flex-row gap-3">
+            <TouchableOpacity onPress={onClose} activeOpacity={0.7} className="flex-1 py-3 rounded-xl items-center border border-slate-200 bg-white"><Text className="text-sm font-semibold text-slate-500">Close</Text></TouchableOpacity>
+            <TouchableOpacity onPress={handleAssign} disabled={saving} activeOpacity={0.7} className="flex-1 py-3 rounded-xl items-center flex-row justify-center" style={{ backgroundColor: saving ? `${BRAND}60` : BRAND }}>
+              {saving ? <ActivityIndicator size="small" color="#ffffff" /> : <><Check size={16} color="#ffffff" strokeWidth={2.5} /><Text className="text-sm font-semibold text-white ml-1.5">Assign ({assignedCount})</Text></>}
             </TouchableOpacity>
           </View>
         </View>
@@ -882,7 +564,6 @@ const AssignPagesModal = ({ visible, member, onClose, onSaved }) => {
     </Modal>
   );
 };
-
 
 const TeamMemberCard = ({ member, onEdit, onDelete, onPerformance, onAssignPages }) => {
   const initials = getInitials(member.name);
@@ -892,63 +573,28 @@ const TeamMemberCard = ({ member, onEdit, onDelete, onPerformance, onAssignPages
   return (
     <View className="bg-white rounded-2xl p-5 mb-4 border border-slate-200">
       <View className="flex-row items-center mb-4">
-        <View className="w-14 h-14 rounded-full items-center justify-center mr-4" style={{ backgroundColor: BRAND }}>
-          <Text className="text-white font-bold text-xl">{initials}</Text>
-        </View>
+        <View className="w-14 h-14 rounded-full items-center justify-center mr-4" style={{ backgroundColor: BRAND }}><Text className="text-white font-bold text-xl">{initials}</Text></View>
         <View className="flex-1">
           <Text className="text-slate-800 font-semibold text-lg">{member.name}</Text>
-          <View className="flex-row items-center mt-0.5">
-            <Mail size={12} color="#94A3B8" />
-            <Text className="text-slate-400 text-xs ml-1 flex-1" numberOfLines={1}>{member.email}</Text>
-          </View>
+          <View className="flex-row items-center mt-0.5"><Mail size={12} color="#94A3B8" /><Text className="text-slate-400 text-xs ml-1 flex-1" numberOfLines={1}>{member.email}</Text></View>
           <View className="flex-row items-center mt-2 gap-2 flex-wrap">
-            {member.company_name ? (
-              <View className="px-2.5 py-1 rounded-md" style={{ backgroundColor: '#6e226e12' }}>
-                <Text className="text-xs font-medium" style={{ color: BRAND }}>{member.company_name}</Text>
-              </View>
-            ) : null}
-            {member.is_subscribed ? (
-              <View className="px-2.5 py-1 rounded-md" style={{ backgroundColor: '#6e226e12' }}>
-                <Text className="text-xs font-medium" style={{ color: BRAND }}>Subscribed</Text>
-              </View>
-            ) : null}
+            {member.company_name ? <View className="px-2.5 py-1 rounded-md" style={{ backgroundColor: '#6e226e12' }}><Text className="text-xs font-medium" style={{ color: BRAND }}>{member.company_name}</Text></View> : null}
+            {member.is_subscribed ? <View className="px-2.5 py-1 rounded-md" style={{ backgroundColor: '#6e226e12' }}><Text className="text-xs font-medium" style={{ color: BRAND }}>Subscribed</Text></View> : null}
           </View>
         </View>
       </View>
-
       <View className="flex-row gap-4 mb-4 pl-1">
-        {lastLogin ? (
-          <View className="flex-row items-center">
-            <Calendar size={12} color={BRAND} />
-            <Text className="text-[11px] ml-1" style={{ color: BRAND }}>Last login: {lastLogin}</Text>
-          </View>
-        ) : null}
-        {joinedDate ? (
-          <View className="flex-row items-center">
-            <Shield size={12} color={BRAND} />
-            <Text className="text-[11px] ml-1" style={{ color: BRAND }}>Joined: {joinedDate}</Text>
-          </View>
-        ) : null}
+        {lastLogin ? <View className="flex-row items-center"><Calendar size={12} color={BRAND} /><Text className="text-[11px] ml-1" style={{ color: BRAND }}>Last login: {lastLogin}</Text></View> : null}
+        {joinedDate ? <View className="flex-row items-center"><Shield size={12} color={BRAND} /><Text className="text-[11px] ml-1" style={{ color: BRAND }}>Joined: {joinedDate}</Text></View> : null}
       </View>
-
       <View className="flex-row justify-between items-center">
         <View className="flex-row gap-2">
-          <TouchableOpacity onPress={() => onPerformance(member)} className="flex-row items-center border rounded-lg px-3 py-2.5" style={{ borderColor: '#6e226e30' }} activeOpacity={0.7}>
-            <Eye size={16} color={BRAND} />
-            <Text className="ml-1.5 font-medium text-xs" style={{ color: BRAND }}>Performance</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onAssignPages(member)} className="flex-row items-center border rounded-lg px-3 py-2.5" style={{ borderColor: '#6e226e30' }} activeOpacity={0.7}>
-            <Menu size={16} color={BRAND} />
-            <Text className="ml-1.5 font-medium text-xs" style={{ color: BRAND }}>Pages</Text>
-          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onPerformance(member)} className="flex-row items-center border rounded-lg px-3 py-2.5" style={{ borderColor: '#6e226e30' }} activeOpacity={0.7}><Eye size={16} color={BRAND} /><Text className="ml-1.5 font-medium text-xs" style={{ color: BRAND }}>Performance</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => onAssignPages(member)} className="flex-row items-center border rounded-lg px-3 py-2.5" style={{ borderColor: '#6e226e30' }} activeOpacity={0.7}><Menu size={16} color={BRAND} /><Text className="ml-1.5 font-medium text-xs" style={{ color: BRAND }}>Pages</Text></TouchableOpacity>
         </View>
         <View className="flex-row gap-2">
-          <TouchableOpacity onPress={() => onEdit(member)} className="w-10 h-10 rounded-lg items-center justify-center" style={{ backgroundColor: '#f1f5f9' }} activeOpacity={0.7}>
-            <Edit2 size={16} color="#64748B" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onDelete(member)} className="w-10 h-10 rounded-lg items-center justify-center" style={{ backgroundColor: '#fef2f2' }} activeOpacity={0.7}>
-            <Trash2 size={16} color="#EF4444" />
-          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onEdit(member)} className="w-10 h-10 rounded-lg items-center justify-center" style={{ backgroundColor: '#f1f5f9' }} activeOpacity={0.7}><Edit2 size={16} color="#64748B" /></TouchableOpacity>
+          <TouchableOpacity onPress={() => onDelete(member)} className="w-10 h-10 rounded-lg items-center justify-center" style={{ backgroundColor: '#fef2f2' }} activeOpacity={0.7}><Trash2 size={16} color="#EF4444" /></TouchableOpacity>
         </View>
       </View>
     </View>
@@ -970,12 +616,16 @@ export default function TeamManagement() {
   const [editingMember, setEditingMember] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletingMember, setDeletingMember] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [performanceModalVisible, setPerformanceModalVisible] = useState(false);
   const [performanceMember, setPerformanceMember] = useState(null);
   const [assignPagesModalVisible, setAssignPagesModalVisible] = useState(false);
   const [assignPagesMember, setAssignPagesMember] = useState(null);
+  const [toast, setToast] = useState({ visible: false, type: 'success', message: '' });
 
   const perPage = 10;
+
+  const showToast = (type, message) => setToast({ visible: true, type, message });
 
   const fetchTeam = useCallback(async (page = 1, reset = false) => {
     if (page === 1) { setLoading(true); setError(''); } else setLoadingMore(true);
@@ -992,26 +642,47 @@ export default function TeamManagement() {
 
   useEffect(() => { fetchTeam(1, true); }, []);
 
+  const handleConfirmDelete = async () => {
+    if (!deletingMember) return;
+    setDeleteLoading(true);
+    try {
+      const r = await deleteUser(deletingMember._id || deletingMember.id);
+      if (r.success) {
+        setMembers((prev) => prev.filter((m) => (m._id || m.id) !== (deletingMember._id || deletingMember.id)));
+        setTotalItems((prev) => Math.max(0, prev - 1));
+        showToast('success', `"${deletingMember.name}" deleted`);
+      } else {
+        showToast('error', r.message || 'Failed to delete user');
+      }
+    } catch (e) {
+      showToast('error', e.message || 'Something went wrong');
+    }
+    setDeleteLoading(false);
+    setDeleteModalVisible(false);
+    setDeletingMember(null);
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+
+      <StatusToast
+        visible={toast.visible}
+        type={toast.type}
+        message={toast.message}
+        onHide={() => setToast({ visible: false, type: 'success', message: '' })}
+      />
+
       <View className={`flex-1 ${isLargeScreen ? 'items-center' : ''}`}>
         <View className={`flex-1 bg-white ${isLargeScreen ? 'max-w-lg w-full shadow-xl' : 'w-full'}`}>
           {isTablet && <View className="items-center py-4 bg-slate-50"><Text className="text-xs font-semibold uppercase tracking-wider" style={{ color: BRAND }}>Team Management</Text></View>}
           <Header />
           <View className="px-5 py-5 flex-row justify-between items-center bg-slate-50">
             <View className="flex-row items-center flex-1">
-              <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} className="p-1 -ml-1 mr-3" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <ArrowLeft size={24} color="#64748B" strokeWidth={2} />
-              </TouchableOpacity>
-              <View>
-                <Text className="text-slate-800 font-semibold text-2xl">Team</Text>
-                {totalItems > 0 && <Text className="text-xs text-slate-400 mt-0.5">{totalItems} member{totalItems !== 1 ? 's' : ''}</Text>}
-              </View>
+              <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} className="p-1 -ml-1 mr-3" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><ArrowLeft size={24} color="#64748B" strokeWidth={2} /></TouchableOpacity>
+              <View><Text className="text-slate-800 font-semibold text-2xl">Team</Text>{totalItems > 0 && <Text className="text-xs text-slate-400 mt-0.5">{totalItems} member{totalItems !== 1 ? 's' : ''}</Text>}</View>
             </View>
-            <TouchableOpacity onPress={() => { setEditingMember(null); setUserModalVisible(true); }} className="w-12 h-12 rounded-2xl items-center justify-center shadow-md" style={{ backgroundColor: BRAND }} activeOpacity={0.7}>
-              <Plus size={24} color="white" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setEditingMember(null); setUserModalVisible(true); }} className="w-12 h-12 rounded-2xl items-center justify-center shadow-md" style={{ backgroundColor: BRAND }} activeOpacity={0.7}><Plus size={24} color="white" /></TouchableOpacity>
           </View>
 
           <ScrollView className="flex-1 bg-slate-50" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: isTablet ? 24 : 20, paddingTop: 8, paddingBottom: 40 }}>
@@ -1045,22 +716,34 @@ export default function TeamManagement() {
 
       <UserModal visible={userModalVisible} onClose={() => { setUserModalVisible(false); setEditingMember(null); }}
         onSaved={(savedUser, isEdit) => {
-          if (isEdit) setMembers((prev) => prev.map((m) => (m._id || m.id) === (savedUser._id || savedUser.id) ? { ...m, ...savedUser } : m));
-          else { setMembers((prev) => [savedUser, ...prev]); setTotalItems((prev) => prev + 1); }
+          if (isEdit) {
+            setMembers((prev) => prev.map((m) => (m._id || m.id) === (savedUser._id || savedUser.id) ? { ...m, ...savedUser } : m));
+            showToast('success', `"${savedUser.name}" updated`);
+          } else {
+            setMembers((prev) => [savedUser, ...prev]); setTotalItems((prev) => prev + 1);
+            showToast('success', `"${savedUser.name}" added`);
+          }
         }} editMember={editingMember} />
 
-      <DeleteUserModal visible={deleteModalVisible} member={deletingMember}
+      <ConfirmModal
+        visible={deleteModalVisible}
         onClose={() => { setDeleteModalVisible(false); setDeletingMember(null); }}
-        onDeleted={(id) => { setMembers((prev) => prev.filter((m) => (m._id || m.id) !== id)); setTotalItems((prev) => Math.max(0, prev - 1)); }} />
+        onConfirm={handleConfirmDelete}
+        title="Delete Member"
+        message={`Are you sure you want to delete "${deletingMember?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        type="delete"
+        loading={deleteLoading}
+      />
 
-      <PerformanceModal visible={performanceModalVisible} member={performanceMember}
-        onClose={() => { setPerformanceModalVisible(false); setPerformanceMember(null); }} />
+      <PerformanceModal visible={performanceModalVisible} member={performanceMember} onClose={() => { setPerformanceModalVisible(false); setPerformanceMember(null); }} />
 
       <AssignPagesModal
         visible={assignPagesModalVisible}
         member={assignPagesMember}
         onClose={() => { setAssignPagesModalVisible(false); setAssignPagesMember(null); }}
         onSaved={() => fetchTeam(1, true)}
+        showToast={showToast}
       />
     </SafeAreaView>
   );
